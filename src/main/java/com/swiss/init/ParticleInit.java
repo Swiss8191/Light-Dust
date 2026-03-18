@@ -13,4 +13,7 @@ public class ParticleInit {
 
     public static final RegistryObject<SimpleParticleType> DUST_PARTICLE = 
         PARTICLES.register("dust_particle", () -> new SimpleParticleType(false));
+
+    public static final RegistryObject<SimpleParticleType> ACTION_DUST_PARTICLE = 
+        PARTICLES.register("action_dust_particle", () -> new SimpleParticleType(false));
 }

@@ -1,7 +1,9 @@
 package com.lightdust;
 
 import com.lightdust.client.particle.DustParticle;
+import com.lightdust.client.particle.ActionDustParticle;
 import com.lightdust.config.LightDustConfig;
+import com.lightdust.config.LightDustColorConfig;
 import com.lightdust.init.ParticleInit;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.RegisterParticleProvidersEvent;
@@ -16,14 +18,21 @@ public class LightDust {
     public static final String MODID = "lightdust";
 
     public LightDust() {
-        IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
+        IEventBus modEventBus = net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext.get().getModEventBus();
 
-        ModLoadingContext.get().registerConfig(
+        net.minecraftforge.fml.ModLoadingContext.get().registerConfig(
             net.minecraftforge.fml.config.ModConfig.Type.COMMON, 
-            LightDustConfig.SPEC
+            com.lightdust.config.LightDustConfig.SPEC,
+            "lightdust/main.toml"
         );
 
-        ParticleInit.PARTICLES.register(modEventBus);
+        net.minecraftforge.fml.ModLoadingContext.get().registerConfig(
+            net.minecraftforge.fml.config.ModConfig.Type.COMMON, 
+            com.lightdust.config.LightDustColorConfig.SPEC,
+            "lightdust/colors.toml"
+        );
+
+        com.lightdust.init.ParticleInit.PARTICLES.register(modEventBus);
     }
 
     @Mod.EventBusSubscriber(modid = MODID, bus = Mod.EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
@@ -32,6 +41,7 @@ public class LightDust {
         @SubscribeEvent
         public static void registerParticleFactories(RegisterParticleProvidersEvent event) {
             event.registerSpriteSet(ParticleInit.DUST_PARTICLE.get(), DustParticle.Provider::new);
+            event.registerSpriteSet(ParticleInit.ACTION_DUST_PARTICLE.get(), ActionDustParticle.Provider::new);
         }
     }
 }

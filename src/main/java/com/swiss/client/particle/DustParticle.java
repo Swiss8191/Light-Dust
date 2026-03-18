@@ -1,6 +1,7 @@
 package com.lightdust.client.particle;
 
 import com.lightdust.config.LightDustConfig;
+import com.lightdust.config.LightDustColorConfig;
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -19,23 +20,47 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 import com.mojang.logging.LogUtils;
+
+import java.util.concurrent.ConcurrentHashMap;
+
 import org.slf4j.Logger;
 
 @OnlyIn(Dist.CLIENT)
 public class DustParticle extends TextureSheetParticle {
-    
-    public static final Long2IntOpenHashMap AMBIENT_COUNTS = new Long2IntOpenHashMap();
+
+    public static final ConcurrentHashMap<Long, Integer> AMBIENT_COUNTS = new ConcurrentHashMap<>();
     public static int TOTAL_AMBIENT_COUNT = 0;
+    public static net.minecraft.world.phys.Vec3 LOUD_NOISE_POS = null;
+    public static long LOUD_NOISE_TICK = 0;
+    public static net.minecraft.world.phys.Vec3 LANDING_IMPACT_POS = null;
+    public static long LANDING_IMPACT_TICK = 0;
+    public static double LANDING_IMPACT_FORCE = 0.0;
+    public static double LANDING_IMPACT_RADIUS = 4.0;
     public static BlockPos PENDING_POS = null;
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final java.util.Map<net.minecraft.world.level.block.Block, float[]> LIGHT_COLORS = new java.util.HashMap<>();
-    public static boolean colorsLoaded = false;
+    private static final java.util.Map<String, float[]> BIOME_COLORS = new java.util.HashMap<>();
+    public static final java.util.Map<net.minecraft.world.level.block.Block, String> TRIGGER_BLOCKS = new java.util.HashMap<>();
+    public static final java.util.Map<String, float[]> TRIGGER_COLORS = new java.util.HashMap<>();
+    public static final java.util.Map<net.minecraft.world.level.block.Block, double[]> HEAT_SOURCE_BLOCKS = new java.util.HashMap<>();
 
+    private final float[] cachedBiomeTint;
+    public enum DustBehavior {
+        DEFAULT, SPORE, SCULK, SNOWY, ASH, HEAVY
+    }
+    
+    private DustBehavior behavior = DustBehavior.DEFAULT;
+    private final float rVar;
+    private final float gVar;
+    private final float bVar;
+
+    public static boolean colorsLoaded = false;
     private final BlockPos ownerPos;
-    private final float rotSpeed;
+    
+    private float rotSpeed; 
+    
     private final int tickOffset;
     private float baseAlpha;
-    private final float variation;
 
     protected DustParticle(ClientLevel level, double x, double y, double z, double dx, double dy, double dz, SpriteSet sprites) {
         super(level, x, y, z);
@@ -43,26 +68,34 @@ public class DustParticle extends TextureSheetParticle {
         this.tickOffset = level.random.nextInt(20);
         float ambientOpacity = LightDustConfig.AMBIENT_DUST_OPACITY.get().floatValue();
 
-        this.variation = level.random.nextFloat() * 0.05F;
+        this.rVar = (level.random.nextFloat() - 0.5F) * 0.1F;
+        this.gVar = (level.random.nextFloat() - 0.5F) * 0.1F;
+        this.bVar = (level.random.nextFloat() - 0.5F) * 0.1F;
+        
+        BlockPos pos = BlockPos.containing(x, y, z);
+        this.cachedBiomeTint = determineEnvironmentalTint(level, pos);
+
         if (this.ownerPos != null) {
-            AMBIENT_COUNTS.addTo(this.ownerPos.asLong(), 1);
+            AMBIENT_COUNTS.merge(this.ownerPos.asLong(), 1, Integer::sum);
             TOTAL_AMBIENT_COUNT++;
             int light = level.getBrightness(LightLayer.BLOCK, this.ownerPos);
             float intensity = Math.max(0f, (light - 6) / 9.0f);
             float baseBrightness = 0.15F + (0.85F * intensity);
             
-            // grab the tint
-            float[] tint = getNearbyTint(level, this.ownerPos);
-            float strength = LightDustConfig.TINT_STRENGTH.get().floatValue();
+            float[] blockTint = getNearbyTint(level, this.ownerPos);
+            float strength = LightDustColorConfig.TINT_STRENGTH.get().floatValue();
+            float baseR = this.cachedBiomeTint != null ? this.cachedBiomeTint[0] * baseBrightness : baseBrightness;
+            float baseG = this.cachedBiomeTint != null ? this.cachedBiomeTint[1] * baseBrightness : baseBrightness;
+            float baseB = this.cachedBiomeTint != null ? this.cachedBiomeTint[2] * baseBrightness : baseBrightness;
             
-            if (tint != null && strength > 0) {
-                this.rCol = (baseBrightness * (1 - strength) + tint[0] * strength) + this.variation;
-                this.gCol = (baseBrightness * (1 - strength) + tint[1] * strength) + this.variation;
-                this.bCol = (baseBrightness * (1 - strength) + tint[2] * strength) + this.variation;
+            if (blockTint != null && strength > 0) {
+                this.rCol = Mth.clamp((baseR * (1 - strength) + blockTint[0] * strength) + this.rVar, 0.0F, 1.0F);
+                this.gCol = Mth.clamp((baseG * (1 - strength) + blockTint[1] * strength) + this.gVar, 0.0F, 1.0F);
+                this.bCol = Mth.clamp((baseB * (1 - strength) + blockTint[2] * strength) + this.bVar, 0.0F, 1.0F);
             } else {
-                this.rCol = baseBrightness + this.variation;
-                this.gCol = baseBrightness + this.variation;
-                this.bCol = baseBrightness + this.variation;
+                this.rCol = Mth.clamp(baseR + this.rVar, 0.0F, 1.0F);
+                this.gCol = Mth.clamp(baseG + this.gVar, 0.0F, 1.0F);
+                this.bCol = Mth.clamp(baseB + this.bVar, 0.0F, 1.0F);
             }
             
             this.baseAlpha = ambientOpacity + (0.28F * intensity);
@@ -70,16 +103,21 @@ public class DustParticle extends TextureSheetParticle {
             this.lifetime = LightDustConfig.PARTICLE_LIFETIME.get() + level.random.nextInt(100);
         } else {
             this.lifetime = LightDustConfig.PARTICLE_LIFETIME.get() / 2;
-            this.rCol = 0.8F;
-            this.gCol = 0.8F; 
-            this.bCol = 0.8F;
+            float defaultBrightness = 0.8F;
+            float baseR = this.cachedBiomeTint != null ? this.cachedBiomeTint[0] * defaultBrightness : defaultBrightness;
+            float baseG = this.cachedBiomeTint != null ? this.cachedBiomeTint[1] * defaultBrightness : defaultBrightness;
+            float baseB = this.cachedBiomeTint != null ? this.cachedBiomeTint[2] * defaultBrightness : defaultBrightness;
+            
+            this.rCol = Mth.clamp(baseR + this.rVar, 0.0F, 1.0F);
+            this.gCol = Mth.clamp(baseG + this.gVar, 0.0F, 1.0F);
+            this.bCol = Mth.clamp(baseB + this.bVar, 0.0F, 1.0F);
+            
             this.baseAlpha = ambientOpacity;
             this.alpha = baseAlpha;
         }
 
         this.quadSize = LightDustConfig.PARTICLE_SIZE.get().floatValue(); 
         this.gravity = 0.000F;
-
         if (dx != 0 || dy != 0 || dz != 0) {
             this.xd = dx;
             this.yd = dy;
@@ -90,7 +128,7 @@ public class DustParticle extends TextureSheetParticle {
             this.zd = (level.random.nextFloat() - 0.5F) * 0.005F;
         }
         
-        this.hasPhysics = false; 
+        this.hasPhysics = true;
         this.roll = level.random.nextFloat() * Mth.TWO_PI;
         this.oRoll = this.roll;
         this.rotSpeed = (level.random.nextFloat() - 0.5F) * 0.1F; 
@@ -103,9 +141,11 @@ public class DustParticle extends TextureSheetParticle {
     public void remove() {
         if (!this.removed && ownerPos != null) {
             long key = ownerPos.asLong();
-            int oldVal = AMBIENT_COUNTS.addTo(key, -1);
-            if (oldVal <= 1) AMBIENT_COUNTS.remove(key);
-            if (TOTAL_AMBIENT_COUNT > 0) TOTAL_AMBIENT_COUNT--;
+            AMBIENT_COUNTS.computeIfPresent(key, (k, v) -> v <= 1 ? null : v - 1);
+            
+            if (TOTAL_AMBIENT_COUNT > 0) {
+                TOTAL_AMBIENT_COUNT--;
+            }
         }
         super.remove();
     }
@@ -117,17 +157,48 @@ public class DustParticle extends TextureSheetParticle {
 
     @Override
     public int getLightColor(float partialTick) {
-        if ((this.age + tickOffset) % 10 == 0) {
-            BlockPos blockpos = BlockPos.containing(this.x, this.y, this.z);
-            return this.level.hasChunkAt(blockpos) ? LevelRenderer.getLightColor(this.level, blockpos) : 0;
+        BlockPos blockpos = BlockPos.containing(this.x, this.y, this.z);
+        int baseLight = this.level.hasChunkAt(blockpos) ? LevelRenderer.getLightColor(this.level, blockpos) : 0;
+
+        if (blockpos.getY() < 60 && !this.level.canSeeSky(blockpos)) {
+            int blockLight = this.level.getBrightness(LightLayer.BLOCK, blockpos);
+            if (blockLight > 0) {
+                Player player = Minecraft.getInstance().player;
+                if (player != null) {
+                    double dist = Math.sqrt(player.distanceToSqr(this.x, this.y, this.z));
+                    double glowRadius = 6.0; 
+                    
+                    if (dist <= glowRadius) {
+                        int currentBlockLight = baseLight & 255;
+                        int currentSkyLight = baseLight >> 16 & 255;
+                        double glowFactor = 1.0 - (dist / glowRadius);
+                        int slightGlow = (int) (10 * glowFactor);
+
+                        int finalBlockLight = Math.max(currentBlockLight, slightGlow);
+
+                        return (baseLight & 0xFF000000) | (currentSkyLight << 16) | finalBlockLight;
+                    }
+                }
+            }
         }
-        return super.getLightColor(partialTick);
+        return baseLight;
     }
 
     @Override
     public void tick() {
         super.tick();
-        // Fade Logic
+        Player player = Minecraft.getInstance().player;
+        float seed = (float)(this.x * 10.0 + this.y * 10.0 + this.z * 10.0) + (this.tickOffset * 100.0F) + (this.rVar * 5000.0F);
+
+        if (this.onGround && LightDustConfig.ENABLE_DUST_SETTLING.get()) {
+            this.xd = 0.0;
+            this.zd = 0.0;
+            if (this.yd < 0.0) {
+                this.yd = 0.0;
+            }
+            this.rotSpeed = 0.0F; 
+        }
+
         if (this.age < 20) {
             this.alpha = this.baseAlpha * (this.age / 20.0F);
         } else if (this.age > this.lifetime - 20) {
@@ -136,33 +207,78 @@ public class DustParticle extends TextureSheetParticle {
             this.alpha = this.baseAlpha;
         }
 
+        float targetAlpha = this.alpha;
+
+        if (this.behavior == DustBehavior.SPORE) {
+            if (this.tickOffset % 3 == 0) {
+                float pulse = Mth.sin((this.age * 0.05F) + seed);
+                if (pulse > 0) targetAlpha *= (1.0F + pulse * 0.6F);
+            }
+        } else if (this.behavior == DustBehavior.SNOWY) {
+            if (this.tickOffset % 4 == 0) {
+                int cycle = (this.age + this.tickOffset * 11) % 80;
+                if (cycle < 15) {
+                    float flash = Mth.sin((cycle / 15.0F) * (float)Math.PI);
+                    targetAlpha *= (1.0F + flash * 1.5F); 
+                }
+            }
+        } else if (this.behavior == DustBehavior.SCULK) {
+            if (this.tickOffset % 2 == 0) {
+                targetAlpha *= (1.0F + Mth.sin((this.age * 0.04F) + seed) * 0.4F);
+            }
+        }
+
+        if (this.tickOffset % 4 == 0) {
+            int glintCycle = (this.age + this.tickOffset * 17) % 160;
+            if (glintCycle < 24) {
+                float glintPhase = Mth.sin((glintCycle / 24.0F) * (float)Math.PI);
+                targetAlpha *= (1.0F + glintPhase * 0.8F);
+            }
+        }
+        
+        this.alpha = Mth.clamp(targetAlpha, 0.0F, 1.0F);
+
         if ((this.age + tickOffset) % 20 == 0) {
             BlockPos currentPos = BlockPos.containing(this.x, this.y, this.z);
             if (level.getFluidState(currentPos).is(FluidTags.WATER)) {
                 this.remove(); return;
             }
             
+            boolean canSeeSky = level.canSeeSky(currentPos);
+            
+            if (canSeeSky) {
+                if (level.isThundering() && LightDustConfig.DISABLE_DURING_THUNDER.get()) {
+                    this.remove(); return;
+                } else if (level.isRaining() && !level.isThundering() && LightDustConfig.DISABLE_DURING_RAIN.get()) {
+                    this.remove(); return;
+                }
+            }
+
             int blockLight = level.getBrightness(LightLayer.BLOCK, currentPos);
-            if (blockLight < 4) {
-                this.remove();
-                return;
+            boolean isDarkCave = currentPos.getY() < 60 && !canSeeSky;
+            
+            if (blockLight < 4 && !isDarkCave) {
+                this.remove(); return;
             }
 
             if (this.ownerPos != null) {
                 float intensity = Math.max(0f, (blockLight - 6) / 9.0f);
                 float baseBrightness = 0.15F + (0.85F * intensity);
 
-                float[] tint = getNearbyTint(level, this.ownerPos);
-                float strength = LightDustConfig.TINT_STRENGTH.get().floatValue();
+                float[] blockTint = getNearbyTint(level, this.ownerPos);
+                float strength = LightDustColorConfig.TINT_STRENGTH.get().floatValue();
+                float baseR = this.cachedBiomeTint != null ? this.cachedBiomeTint[0] * baseBrightness : baseBrightness;
+                float baseG = this.cachedBiomeTint != null ? this.cachedBiomeTint[1] * baseBrightness : baseBrightness;
+                float baseB = this.cachedBiomeTint != null ? this.cachedBiomeTint[2] * baseBrightness : baseBrightness;
                 
-                if (tint != null && strength > 0) {
-                    this.rCol = (baseBrightness * (1 - strength) + tint[0] * strength) + this.variation;
-                    this.gCol = (baseBrightness * (1 - strength) + tint[1] * strength) + this.variation;
-                    this.bCol = (baseBrightness * (1 - strength) + tint[2] * strength) + this.variation;
+                if (blockTint != null && strength > 0) {
+                    this.rCol = Mth.clamp((baseR * (1 - strength) + blockTint[0] * strength) + this.rVar, 0.0F, 1.0F);
+                    this.gCol = Mth.clamp((baseG * (1 - strength) + blockTint[1] * strength) + this.gVar, 0.0F, 1.0F);
+                    this.bCol = Mth.clamp((baseB * (1 - strength) + blockTint[2] * strength) + this.bVar, 0.0F, 1.0F);
                 } else {
-                    this.rCol = baseBrightness + this.variation;
-                    this.gCol = baseBrightness + this.variation;
-                    this.bCol = baseBrightness + this.variation;
+                    this.rCol = Mth.clamp(baseR + this.rVar, 0.0F, 1.0F);
+                    this.gCol = Mth.clamp(baseG + this.gVar, 0.0F, 1.0F);
+                    this.bCol = Mth.clamp(baseB + this.bVar, 0.0F, 1.0F);
                 }
                 
                 float ambientOpacity = LightDustConfig.AMBIENT_DUST_OPACITY.get().floatValue();
@@ -171,46 +287,168 @@ public class DustParticle extends TextureSheetParticle {
 
             long time = level.getDayTime() % 24000;
             boolean isDay = time < 13000 || time > 23000;
-            if (isDay) {
+            
+            if (isDay && !isDarkCave && !level.isRaining()) {
                 int skyLight = level.getBrightness(LightLayer.SKY, currentPos);
                 int diffThreshold = LightDustConfig.DAYTIME_LIGHT_DIFF.get();
 
                 if ((blockLight - skyLight) <= diffThreshold) {
-                    this.remove();
-                    return;
+                    this.remove(); return;
                 }
             }
 
-            Player player = Minecraft.getInstance().player;
             if (player != null) {
                 double maxDist = LightDustConfig.AMBIENT_HARD_CAP.get();
                 if (player.distanceToSqr(this.x, this.y, this.z) > maxDist * maxDist) {
-                    this.remove();
-                    return;
+                    this.remove(); return;
                 }
             }
         }
 
-        this.oRoll = this.roll;
-        this.roll += this.rotSpeed;
-        
-        // Physics
-        float seed = (float)(this.x + this.y + this.z);
-        float time = (float)((this.age + seed) * 0.15);
-        double sinX = Mth.sin(time * 0.8f + seed);
-        double cosZ = Mth.cos(time * 1.1f + seed);
-        
-        double driftDown = 0.00002 + (level.random.nextDouble() * 0.00005);
-        double microTurbulence = (level.random.nextDouble() - 0.5) * 0.00012;
+        if ((this.age + tickOffset) % 10 == 0) {
+            double appliedUpdraftSpeed = 0;
+            BlockPos.MutableBlockPos mutableBelow = new BlockPos.MutableBlockPos();
+            for (int i = 1; i <= 7; i++) {
+                mutableBelow.set(this.x, this.y - i, this.z);
+                net.minecraft.world.level.block.state.BlockState stateBelow = level.getBlockState(mutableBelow);
+                double[] heatData = HEAT_SOURCE_BLOCKS.get(stateBelow.getBlock());
+                if (heatData == null && stateBelow.getFluidState().is(FluidTags.LAVA)) {
+                    heatData = HEAT_SOURCE_BLOCKS.get(net.minecraft.world.level.block.Blocks.LAVA);
+                }
+                if (heatData != null) {
+                    double reach = heatData[1];
+                    double radius = heatData[2];
+                    if (i <= reach) {
+                        double dX = this.x - (mutableBelow.getX() + 0.5);
+                        double dZ = this.z - (mutableBelow.getZ() + 0.5);
+                        if ((dX * dX + dZ * dZ) <= (radius * radius)) {
+                            appliedUpdraftSpeed = heatData[0];
+                            break;
+                        }
+                    }
+                }
+                if (stateBelow.isSolidRender(level, mutableBelow)) break;
+            }
+            
+            if (appliedUpdraftSpeed > 0) {
+                this.yd += appliedUpdraftSpeed + (level.random.nextDouble() * 0.01);
+                this.xd += (level.random.nextDouble() - 0.5) * 0.02;
+                this.zd += (level.random.nextDouble() - 0.5) * 0.02;
+                this.onGround = false; 
+            }
+        }
 
-        this.xd += sinX * 0.0001 + microTurbulence;
-        this.zd += cosZ * 0.0001 + (microTurbulence * 0.5);
-        this.yd -= (driftDown + (sinX * 0.00005));
-        double jitterX = (level.random.nextDouble() - 0.5) * 0.02;
-        double jitterY = (level.random.nextDouble() - 0.5) * 0.02;
-        double jitterZ = (level.random.nextDouble() - 0.5) * 0.02;
+        if (LightDustConfig.ENABLE_ENTITY_DISTURBANCE.get() && (this.age + tickOffset) % 6 == 0) {
+            double pushConfig = LightDustConfig.ENTITY_PUSH_STRENGTH.get();
+            for (com.lightdust.event.AmbientDustHandler.MovingEntityData data : com.lightdust.event.AmbientDustHandler.ACTIVE_MOVING_ENTITIES) {
+                double dx = this.x - data.x;
+                double dy = this.y - data.y;
+                double dz = this.z - data.z;
+                double distSqr = dx*dx + dy*dy + dz*dz;
 
-        Player player = Minecraft.getInstance().player;
+                if (distSqr < 2.25) { 
+                    double dist = Math.sqrt(distSqr);
+                    if (dist < 0.1) dist = 0.1;
+                    
+                    this.xd += (dx / dist) * data.speed * pushConfig;
+                    this.yd += (dy / dist) * data.speed * pushConfig;
+                    this.zd += (dz / dist) * data.speed * pushConfig;
+                    this.onGround = false; 
+                }
+            }
+        }
+
+        if (LOUD_NOISE_POS != null && level.getGameTime() - LOUD_NOISE_TICK < 15) {
+            double distSqr = LOUD_NOISE_POS.distanceToSqr(this.x, this.y, this.z);
+            if (distSqr < 400.0) { 
+                double dist = Math.sqrt(distSqr);
+                if (dist < 0.1) dist = 0.1;
+                double push = (20.0 - dist) * 0.003;
+                this.xd += ((this.x - LOUD_NOISE_POS.x) / dist) * push + (level.random.nextDouble() - 0.5) * 0.05;
+                this.yd += ((this.y - LOUD_NOISE_POS.y) / dist) * push + (level.random.nextDouble() - 0.5) * 0.05;
+                this.zd += ((this.z - LOUD_NOISE_POS.z) / dist) * push + (level.random.nextDouble() - 0.5) * 0.05;
+                this.onGround = false;
+            }
+        }
+
+        if (LANDING_IMPACT_POS != null && level.getGameTime() - LANDING_IMPACT_TICK < 15) {
+            double maxRadius = LANDING_IMPACT_RADIUS;
+            double distSqr = LANDING_IMPACT_POS.distanceToSqr(this.x, this.y, this.z);
+            if (distSqr < (maxRadius * maxRadius)) { 
+                double dist = Math.sqrt(distSqr);
+                if (dist < 0.1) dist = 0.1;
+                double push = (maxRadius - dist) * LANDING_IMPACT_FORCE;
+                if (push > 0) {
+                    this.xd += ((this.x - LANDING_IMPACT_POS.x) / dist) * push + (level.random.nextDouble() - 0.5) * 0.01;
+                    this.yd += ((this.y - LANDING_IMPACT_POS.y) / dist) * push * 0.5 + (level.random.nextDouble() - 0.5) * 0.01;
+                    this.zd += ((this.z - LANDING_IMPACT_POS.z) / dist) * push + (level.random.nextDouble() - 0.5) * 0.01;
+                    this.onGround = false;
+                }
+            }
+        }
+
+        if (!this.onGround) {
+            this.oRoll = this.roll;
+            this.roll += this.rotSpeed;
+            
+            float gameTimeF = (float) level.getGameTime();
+            float time = (float)(this.age * 0.05F);
+            double sinX = Mth.sin(time * 0.8f + seed);
+            double cosZ = Mth.cos(time * 1.1f + seed);
+            
+            double driftDown = 0.000015 + (level.random.nextDouble() * 0.00003);
+            double microTurbulence = (level.random.nextDouble() - 0.5) * 0.0001;
+
+            if (this.behavior == DustBehavior.SPORE) {
+                driftDown = 0.000005 + (level.random.nextDouble() * 0.00001);
+                microTurbulence *= 1.5; 
+                sinX *= 1.2; cosZ *= 1.2;
+            } else if (this.behavior == DustBehavior.ASH || this.behavior == DustBehavior.HEAVY) {
+                driftDown = 0.00006 + (level.random.nextDouble() * 0.00005);
+                microTurbulence *= 0.6; 
+                sinX *= 0.4; cosZ *= 0.4;
+            } else if (this.behavior == DustBehavior.SCULK) {
+                driftDown = 0.00001 + (level.random.nextDouble() * 0.00001);
+                microTurbulence *= 0.2; 
+                if (level.random.nextInt(50) == 0) {
+                    this.xd += (level.random.nextDouble() - 0.5) * 0.005;
+                    this.zd += (level.random.nextDouble() - 0.5) * 0.005;
+                }
+            }
+
+            double altitudeMultiplier = Math.max(1.0, 1.0 + ((this.y - 64.0) / 128.0)); 
+            boolean canSeeSky = level.canSeeSky(BlockPos.containing(this.x, this.y, this.z));
+            
+            double windX = 0;
+            double windZ = 0;
+            
+            if (canSeeSky) {
+                 double windSpeedModifier;
+                 if (level.isThundering()) {
+                     windSpeedModifier = LightDustConfig.WIND_SPEED_THUNDER.get();
+                 } else if (level.isRaining()) {
+                     windSpeedModifier = LightDustConfig.WIND_SPEED_RAIN.get();
+                 } else {
+                     windSpeedModifier = LightDustConfig.WIND_SPEED_CLEAR.get();
+                 }
+
+                 double globalWindBaseX = Mth.sin(gameTimeF * 0.005f) * 0.02;
+                 double globalWindBaseZ = Mth.cos(gameTimeF * 0.004f) * 0.02;
+                 
+                 windX = globalWindBaseX * altitudeMultiplier * windSpeedModifier;
+                 windZ = globalWindBaseZ * altitudeMultiplier * windSpeedModifier; 
+            }
+
+            double uniqueDriftStrength = 0.00008 + (this.gVar * 0.0004);
+            this.xd += sinX * uniqueDriftStrength + microTurbulence + windX;
+            this.zd += cosZ * uniqueDriftStrength + (microTurbulence * 0.5) + windZ;
+            this.yd -= driftDown;
+        }
+
+        double jitterX = (level.random.nextDouble() - 0.5) * 0.015;
+        double jitterY = (level.random.nextDouble() - 0.5) * 0.015;
+        double jitterZ = (level.random.nextDouble() - 0.5) * 0.015;
+
         if (player != null && player.distanceToSqr(this.x, this.y, this.z) < 4.0) {
             double range = 2.0;
             double dx = this.x - player.getX();
@@ -219,8 +457,10 @@ public class DustParticle extends TextureSheetParticle {
             double dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
             if (dist < 0.01) dist = 0.01;
             double nx = dx / dist; double ny = dy / dist; double nz = dz / dist;
+            
             Vec3 pVel = player.getDeltaMovement();
-            double horizontalSpeed = Math.sqrt(pVel.x * pVel.x + pVel.z * pVel.z);
+            double hSpeedSqr = pVel.x * pVel.x + pVel.z * pVel.z;
+            
             if (player.swingTime > 0) {
                 Vec3 look = player.getLookAngle();
                 if ((nx * look.x) + (ny * look.y) + (nz * look.z) > 0.5) { 
@@ -228,6 +468,7 @@ public class DustParticle extends TextureSheetParticle {
                     this.xd += look.x * slashForce + (nx * 0.005) + jitterX;
                     this.yd += look.y * slashForce + (ny * 0.005) + jitterY;
                     this.zd += look.z * slashForce + (nz * 0.005) + jitterZ;
+                    this.onGround = false;
                 }
             }
 
@@ -238,42 +479,50 @@ public class DustParticle extends TextureSheetParticle {
                     this.xd += (nx * shieldPush) + jitterX;
                     this.yd += (ny * shieldPush) + jitterY;
                     this.zd += (nz * shieldPush) + jitterZ;
+                    this.onGround = false;
                 }
             }
 
-            if (horizontalSpeed > 0.01) {
+            if (hSpeedSqr > 0.0001) {
+                double horizontalSpeed = Math.sqrt(hSpeedSqr);
                 double proximityFactor = (range - dist) / range;
-                double pushStrength = horizontalSpeed * proximityFactor * 0.05; 
+                double pushStrength = horizontalSpeed * proximityFactor * 0.05;
                 this.xd += (nx * pushStrength) + jitterX;
                 this.yd += (ny * pushStrength) + jitterY;
                 this.zd += (nz * pushStrength) + jitterZ;
+                this.onGround = false;
             }
         }
 
-        if (level.isClientSide) {
-             HitResult hit = Minecraft.getInstance().hitResult;
-             if (hit != null && hit.getType() == HitResult.Type.BLOCK) {
-                 BlockPos breakPos = ((BlockHitResult)hit).getBlockPos();
-                 if (player != null && player.swingTime > 0 && breakPos.distToCenterSqr(this.x, this.y, this.z) < 4.0) {
-                     double dX = this.x - (breakPos.getX() + 0.5);
-                     double dY = this.y - (breakPos.getY() + 0.5);
-                     double dZ = this.z - (breakPos.getZ() + 0.5);
-                     double distSqrBreak = dX * dX + dY * dY + dZ * dZ;
-                     if (level.getBlockState(breakPos).isAir() && distSqrBreak < 3) {
-                         double distBreak = Math.sqrt(distSqrBreak);
-                         if (distBreak < 0.1) distBreak = 0.1;
-                         double force = 0.01; 
-                         this.xd += (dX / distBreak) * force + jitterX;
-                         this.yd += (dY / distBreak) * force + jitterY;
-                         this.zd += (dZ / distBreak) * force + jitterZ;
-                     }
-                 }
-             }
-         }
+        HitResult hit = Minecraft.getInstance().hitResult;
+        if (hit != null && hit.getType() == HitResult.Type.BLOCK) {
+            BlockPos breakPos = ((BlockHitResult)hit).getBlockPos();
+            if (player != null && player.swingTime > 0 && breakPos.distToCenterSqr(this.x, this.y, this.z) < 4.0) {
+                double dX = this.x - (breakPos.getX() + 0.5);
+                double dY = this.y - (breakPos.getY() + 0.5);
+                double dZ = this.z - (breakPos.getZ() + 0.5);
+                double distSqrBreak = dX * dX + dY * dY + dZ * dZ;
+                
+                if (level.getBlockState(breakPos).isAir() && distSqrBreak < 3) {
+                    double distBreak = Math.sqrt(distSqrBreak);
+                    if (distBreak < 0.1) distBreak = 0.1;
+                    double force = 0.01; 
+                    this.xd += (dX / distBreak) * force + jitterX;
+                    this.yd += (dY / distBreak) * force + jitterY;
+                    this.zd += (dZ / distBreak) * force + jitterZ;
+                    this.onGround = false;
+                }
+            }
+        }
 
-        this.xd *= 0.94;
-        this.yd *= 0.94;
-        this.zd *= 0.94;
+        if (this.onGround) {
+            this.xd *= 0.5;
+            this.zd *= 0.5;
+        } else {
+            this.xd *= 0.94;
+            this.yd *= 0.94;
+            this.zd *= 0.94;
+        }
         
         this.move(this.xd, this.yd, this.zd);
     }
@@ -281,7 +530,9 @@ public class DustParticle extends TextureSheetParticle {
     @OnlyIn(Dist.CLIENT)
     public static class Provider implements ParticleProvider<SimpleParticleType> {
         private final SpriteSet sprites;
-        public Provider(SpriteSet sprites) { this.sprites = sprites; }
+        public Provider(SpriteSet sprites) {
+            this.sprites = sprites;
+        }
 
         @Override
         public Particle createParticle(SimpleParticleType type, ClientLevel level, double x, double y, double z, double dx, double dy, double dz) {
@@ -289,9 +540,68 @@ public class DustParticle extends TextureSheetParticle {
         }
     }
 
+    private float[] determineEnvironmentalTint(ClientLevel level, BlockPos pos) {
+        if (!colorsLoaded) reloadColors();
+        String dominantSource = level.getBiome(pos).unwrapKey().map(key -> key.location().toString()).orElse("minecraft:plains");
+        float[] actualBiomeTint = BIOME_COLORS.get(dominantSource);
+        if (pos.getY() < 60) {
+            java.util.Map<String, Integer> colorCounts = new java.util.HashMap<>();
+            for (BlockPos p : BlockPos.betweenClosed(pos.offset(-3, -3, -3), pos.offset(3, 3, 3))) {
+                net.minecraft.world.level.block.state.BlockState state = level.getBlockState(p);
+                if (state.isAir()) continue;
+                
+                String hexGroup = TRIGGER_BLOCKS.get(state.getBlock());
+                if (hexGroup != null) {
+                    colorCounts.put(hexGroup, colorCounts.getOrDefault(hexGroup, 0) + 1);
+                }
+            }
+            
+            String dominantHex = null;
+            int maxCount = 0;
+            for (java.util.Map.Entry<String, Integer> entry : colorCounts.entrySet()) {
+                if (entry.getValue() > maxCount) {
+                    maxCount = entry.getValue();
+                    dominantHex = entry.getKey();
+                }
+            }
+            
+            if (maxCount > 3 && dominantHex != null) {
+                dominantSource = dominantHex;
+                actualBiomeTint = TRIGGER_COLORS.get(dominantHex);
+            }
+        }
+        
+        if (dominantSource.contains("lush") || dominantSource.contains("mushroom") || dominantSource.contains("swamp") || dominantSource.equals("#8FCE00")) {
+            this.behavior = DustBehavior.SPORE;
+        } else if (dominantSource.contains("sculk") || dominantSource.contains("deep_dark") || dominantSource.equals("#006666")) {
+            this.behavior = DustBehavior.SCULK;
+        } else if (dominantSource.contains("snow") || dominantSource.contains("ice") || dominantSource.contains("frozen")) {
+            this.behavior = DustBehavior.SNOWY;
+        } else if (dominantSource.contains("basalt") || dominantSource.contains("nether") || dominantSource.equals("#4A4A52")) {
+            this.behavior = DustBehavior.ASH;
+        } else if (dominantSource.contains("desert") || dominantSource.contains("badlands") || dominantSource.contains("dripstone") || dominantSource.equals("#8B6B4A")) {
+            this.behavior = DustBehavior.HEAVY;
+        } else {
+            this.behavior = DustBehavior.DEFAULT;
+        }
+        
+        return actualBiomeTint;
+    }
+
+    private float[] getBiomeBaseTint(ClientLevel level, BlockPos pos) {
+        if (!colorsLoaded) {
+            reloadColors();
+        }
+
+        return level.getBiome(pos).unwrapKey()
+                .map(key -> key.location().toString())
+                .map(BIOME_COLORS::get)
+                .orElse(null);
+    }
+
     public static void reloadColors() {
         LIGHT_COLORS.clear();
-        for (String entry : LightDustConfig.CUSTOM_TINTS.get()) {
+        for (String entry : LightDustColorConfig.CUSTOM_TINTS.get()) {
             try {
                 String[] parts = entry.split("=");
                 if (parts.length == 2 && parts[1].contains("#")) {
@@ -305,21 +615,87 @@ public class DustParticle extends TextureSheetParticle {
                             int g = Integer.parseInt(hex.substring(2, 4), 16);
                             int b = Integer.parseInt(hex.substring(4, 6), 16);
                             LIGHT_COLORS.put(block, new float[]{r / 255f, g / 255f, b / 255f});
-                        } else {
-                            LOGGER.error("[Light Dust] Invalid hex code length in config for entry '{}'. Must be 6 characters after '#'.", entry);
                         }
-                    } else {
-                        LOGGER.warn("[Light Dust] Block not found in registry for config entry '{}'. It may be from an uninstalled mod.", entry);
                     }
-                } else {
-                    LOGGER.error("[Light Dust] Malformed custom tint entry: '{}'. Format must be 'modid:block_name=#RRGGBB'.", entry);
                 }
-            } catch (NumberFormatException e) {
-                LOGGER.error("[Light Dust] Invalid hex characters in config for entry '{}'.", entry);
             } catch (Exception e) {
                 LOGGER.error("[Light Dust] Failed to parse custom tint config entry '{}': {}", entry, e.getMessage());
             }
         }
+        
+        BIOME_COLORS.clear();
+        for (String entry : LightDustColorConfig.CUSTOM_BIOME_TINTS.get()) {
+            try {
+                String[] parts = entry.split("=");
+                if (parts.length == 2 && parts[1].contains("#")) {
+                    String biomeId = parts[0].trim();
+                    String hex = parts[1].substring(parts[1].indexOf("#") + 1).trim();
+                    if (hex.length() == 6) {
+                        int r = Integer.parseInt(hex.substring(0, 2), 16);
+                        int g = Integer.parseInt(hex.substring(2, 4), 16);
+                        int b = Integer.parseInt(hex.substring(4, 6), 16);
+                        BIOME_COLORS.put(biomeId, new float[]{r / 255f, g / 255f, b / 255f});
+                    }
+                }
+            } catch (Exception e) {
+                LOGGER.error("[Light Dust] Failed to parse biome tint '{}': {}", entry, e.getMessage());
+            }
+        }
+
+        TRIGGER_BLOCKS.clear();
+        TRIGGER_COLORS.clear();
+        for (String entry : LightDustColorConfig.CAVE_BIOME_TRIGGERS.get()) {
+            try {
+                String[] parts = entry.split("=");
+                if (parts.length == 2 && parts[1].contains("#")) {
+                    net.minecraft.resources.ResourceLocation rl = new net.minecraft.resources.ResourceLocation(parts[0].trim());
+                    net.minecraft.world.level.block.Block block = net.minecraftforge.registries.ForgeRegistries.BLOCKS.getValue(rl);
+                    
+                    if (block != null && block != net.minecraft.world.level.block.Blocks.AIR) {
+                        String hex = parts[1].trim();
+                        TRIGGER_BLOCKS.put(block, hex);
+                        
+                        if (!TRIGGER_COLORS.containsKey(hex)) {
+                            String cleanHex = hex.substring(hex.indexOf("#") + 1);
+                            if (cleanHex.length() == 6) {
+                                int r = Integer.parseInt(cleanHex.substring(0, 2), 16);
+                                int g = Integer.parseInt(cleanHex.substring(2, 4), 16);
+                                int b = Integer.parseInt(cleanHex.substring(4, 6), 16);
+                                TRIGGER_COLORS.put(hex, new float[]{r / 255f, g / 255f, b / 255f});
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                LOGGER.error("[Light Dust] Failed to parse cave trigger '{}': {}", entry, e.getMessage());
+            }
+        }
+
+        HEAT_SOURCE_BLOCKS.clear();
+        if (LightDustConfig.SPEC.isLoaded()) {
+            for (String entry : LightDustConfig.HEAT_BLOCKS.get()) {
+                try {
+                    String[] parts = entry.split("=");
+                    if (parts.length == 2 && parts[1].contains(",")) {
+                        String[] data = parts[1].split(",");
+                        if (data.length == 3) {
+                            double speed = Double.parseDouble(data[0].trim());
+                            double reach = Double.parseDouble(data[1].trim());
+                            double radius = Double.parseDouble(data[2].trim());
+
+                            net.minecraft.resources.ResourceLocation rl = new net.minecraft.resources.ResourceLocation(parts[0].trim());
+                            net.minecraft.world.level.block.Block block = net.minecraftforge.registries.ForgeRegistries.BLOCKS.getValue(rl);
+                            if (block != null && block != net.minecraft.world.level.block.Blocks.AIR) {
+                                HEAT_SOURCE_BLOCKS.put(block, new double[]{speed, reach, radius});
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    LOGGER.error("[Light Dust] Failed to parse heat block '{}': {}", entry, e.getMessage());
+                }
+            }
+        }
+        
         colorsLoaded = true;
     }
 
@@ -327,17 +703,16 @@ public class DustParticle extends TextureSheetParticle {
         if (!colorsLoaded) {
             reloadColors();
         }
-        
+
         for (BlockPos p : BlockPos.betweenClosed(pos.offset(-2, -2, -2), pos.offset(2, 2, 2))) {
             net.minecraft.world.level.block.state.BlockState state = level.getBlockState(p);
-            
             if (state.getLightEmission(level, p) > 0) {
                 float[] color = LIGHT_COLORS.get(state.getBlock());
                 if (color != null) {
-                    return color; 
+                    return color;
                 }
             }
         }
-        return null; 
+        return null;
     }
 }
