@@ -11,7 +11,7 @@ import net.minecraftforge.api.distmarker.OnlyIn;
 @OnlyIn(Dist.CLIENT)
 public class ActionDustParticle extends TextureSheetParticle {
     
-    private float rotSpeed; 
+    private float rotSpeed;
     private final float baseAlpha;
 
     protected ActionDustParticle(ClientLevel level, double x, double y, double z, double dx, double dy, double dz, SpriteSet sprites) {
@@ -30,7 +30,6 @@ public class ActionDustParticle extends TextureSheetParticle {
         float r = 0.8F; 
         float g = 0.8F; 
         float b = 0.8F;
-        
         try {
             String biomeName = level.getBiome(pos).unwrapKey().map(key -> key.location().toString()).orElse("minecraft:plains");
             for (String entry : com.lightdust.config.LightDustColorConfig.CUSTOM_BIOME_TINTS.get()) {
@@ -46,7 +45,6 @@ public class ActionDustParticle extends TextureSheetParticle {
                 }
             }
         } catch (Exception e) {
-            // Fallback
         }
 
         int blockLight = level.getBrightness(net.minecraft.world.level.LightLayer.BLOCK, pos);
@@ -60,7 +58,6 @@ public class ActionDustParticle extends TextureSheetParticle {
         float baseG = g * baseBrightness;
         float baseB = b * baseBrightness;
         float[] blockTint = null;
- 
         searchLoop:
         for (net.minecraft.core.BlockPos p : net.minecraft.core.BlockPos.betweenClosed(pos.offset(-2, -2, -2), pos.offset(2, 2, 2))) {
             net.minecraft.world.level.block.state.BlockState state = level.getBlockState(p);
@@ -78,7 +75,7 @@ public class ActionDustParticle extends TextureSheetParticle {
                             };
                         }
                         break searchLoop;
-                    }
+                }
                 }
             }
         }
@@ -122,13 +119,13 @@ public class ActionDustParticle extends TextureSheetParticle {
             return;
         }
 
-        if (this.onGround && LightDustConfig.ENABLE_DUST_SETTLING.get()) {
+        if (this.onGround && com.lightdust.config.LightDustExperimentalConfig.ENABLE_DUST_SETTLING.get()) {
             this.xd = 0.0;
             this.zd = 0.0;
             if (this.yd < 0.0) {
                 this.yd = 0.0;
             }
-            this.rotSpeed = 0.0F; 
+            this.rotSpeed = 0.0F;
         } else {
             this.oRoll = this.roll;
             this.roll += this.rotSpeed;
@@ -145,7 +142,6 @@ public class ActionDustParticle extends TextureSheetParticle {
             double sinX = net.minecraft.util.Mth.sin(time * 0.8f + seed) * 0.0002;
             double cosZ = net.minecraft.util.Mth.cos(time * 1.1f + seed) * 0.0002;
             double microTurbulence = (this.level.random.nextDouble() - 0.5) * 0.0002;
-
             double driftDown = LightDustConfig.ACTION_DUST_GRAVITY.get() + (this.level.random.nextDouble() * 0.001);
             
             this.xd += sinX + microTurbulence;
@@ -162,13 +158,13 @@ public class ActionDustParticle extends TextureSheetParticle {
         if (!this.onGround) {
             double bounceForce = LightDustConfig.ACTION_DUST_BOUNCE.get();
             if (this.xd != prevXd) {
-                this.xd = -prevXd * bounceForce; 
+                this.xd = -prevXd * bounceForce;
             }
             if (this.zd != prevZd) {
-                this.zd = -prevZd * bounceForce; 
+                this.zd = -prevZd * bounceForce;
             }
             if (this.yd != prevYd) {
-                this.yd = -Math.abs(prevYd) * (bounceForce * 0.75) - 0.02; 
+                this.yd = -Math.abs(prevYd) * (bounceForce * 0.75) - 0.02;
             }
         }
 

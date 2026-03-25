@@ -1,4 +1,4 @@
-package com.lightdust.config; 
+package com.lightdust.config;
 
 import net.minecraftforge.common.ForgeConfigSpec;
 import java.util.Arrays;
@@ -35,20 +35,48 @@ public class LightDustConfig {
     public static final ForgeConfigSpec.DoubleValue BREAK_PARTICLE_SPEED;
     public static final ForgeConfigSpec.DoubleValue ACTION_DUST_GRAVITY;
     public static final ForgeConfigSpec.DoubleValue ACTION_DUST_BOUNCE;
-    
+
     public static final ForgeConfigSpec.IntValue HEAVY_LANDING_MAX_PARTICLES;
     public static final ForgeConfigSpec.IntValue HEAVY_LANDING_PARTICLE_MULTIPLIER;
     public static final ForgeConfigSpec.DoubleValue HEAVY_LANDING_UPWARD_SPEED;
     public static final ForgeConfigSpec.DoubleValue HEAVY_LANDING_OUTWARD_SPEED;
     public static final ForgeConfigSpec.DoubleValue HEAVY_LANDING_AMBIENT_PUSH;
     public static final ForgeConfigSpec.DoubleValue HEAVY_LANDING_AMBIENT_RADIUS;
-    
-    public static final ForgeConfigSpec.ConfigValue<List<? extends String>> HEAT_BLOCKS;
 
-    // Experimental Features
-    public static final ForgeConfigSpec.BooleanValue ENABLE_DUST_SETTLING;
-    public static final ForgeConfigSpec.BooleanValue ENABLE_ENTITY_DISTURBANCE;
-    public static final ForgeConfigSpec.DoubleValue ENTITY_PUSH_STRENGTH;
+    // Handheld lights
+    public static final ForgeConfigSpec.BooleanValue ENABLE_HANDHELD_LIGHTS;
+    public static final ForgeConfigSpec.ConfigValue<List<? extends String>> HANDHELD_LIGHT_ITEMS;
+
+    public static final List<String> DEFAULT_HANDHELD_LIGHTS = Arrays.asList(
+            "minecraft:torch=14,#FFDB8A",
+            "minecraft:lantern=15,#FFDB8A",
+            "minecraft:campfire=15,#FFDB8A",
+            "minecraft:glowstone=15,#FFD273",
+            "minecraft:shroomlight=15,#FF9933",
+            "minecraft:jack_o_lantern=15,#FF9933",
+            "minecraft:soul_torch=10,#4CBAFF",
+            "minecraft:soul_lantern=10,#4CBAFF",
+            "minecraft:soul_campfire=10,#4CBAFF",
+            "minecraft:sea_lantern=15,#8CD9C9",
+            "minecraft:conduit=15,#66E5CC",
+            "minecraft:end_rod=14,#FFE6FF",
+            "minecraft:beacon=15,#99FFFF",
+            "minecraft:crying_obsidian=10,#B300FF",
+            "minecraft:amethyst_cluster=5,#B266FF",
+            "minecraft:redstone_torch=7,#FF0000",
+            "minecraft:redstone_lamp=15,#FF3300",
+            "minecraft:ochre_froglight=15,#FFDCA8",
+            "minecraft:pearlescent_froglight=15,#FFE8E8",
+            "minecraft:verdant_froglight=15,#E8FFD4",
+            "minecraft:glow_berries=14,#FFB233",
+            "minecraft:glow_lichen=7,#99CCB3",
+            "minecraft:magma_block=3,#FF3300",
+            // tags
+            "#minecraft:torches=14,#FFDB8A",
+            "#minecraft:campfires=15,#FF9933"
+    );
+
+    public static final ForgeConfigSpec.ConfigValue<List<? extends String>> HEAT_BLOCKS;
 
     public static final List<String> DEFAULT_HEAT_BLOCKS = Arrays.asList(
             "minecraft:torch=0.015,2,0.4",
@@ -68,7 +96,7 @@ public class LightDustConfig {
         AMBIENT_HARD_CAP = BUILDER.comment("Hard Cap Radius: The absolute max distance dust can exist.")
                 .defineInRange("ambientHardCapRadius", 12, 1, 48);
         AMBIENT_BLOCK_CAP = BUILDER.comment("Max dust particles allowed per single block.")
-                .defineInRange("ambientBlockCap", 14, 1, 20);
+                .defineInRange("ambientBlockCap", 8, 1, 32);
         MIN_BLOCK_LIGHT = BUILDER.comment("Minimum block light level required for ambient dust to spawn.")
                 .defineInRange("minBlockLight", 6, 0, 15);
         DAYTIME_LIGHT_DIFF = BUILDER.comment("The minimum difference between Block Light and Sky Light required for dust to spawn during the day.")
@@ -81,7 +109,6 @@ public class LightDustConfig {
                 .define("enableOcclusionCulling", true);
         BUILDER.pop();
 
-
         BUILDER.push("Visuals and Environment");
         AMBIENT_DUST_OPACITY = BUILDER.comment("Base opacity for ambient dust (0.22 for vanilla, 0.45+ for shaders)")
                 .defineInRange("ambientDustOpacity", 0.22, 0.0, 1.0);
@@ -90,22 +117,21 @@ public class LightDustConfig {
         PARTICLE_LIFETIME = BUILDER.comment("Base lifetime of the dust particles in ticks.")
                 .defineInRange("particleLifetime", 200, 20, 1000);
         WIND_SPEED_CLEAR = BUILDER.comment("Base wind speed modifier during clear weather.")
-                .defineInRange("windSpeedClear", 0.15, 0.0, 1.0);
+                .defineInRange("windSpeedClear", 0.25, 0.0, 1.0);
         WIND_SPEED_RAIN = BUILDER.comment("Base wind speed modifier during rain.")
-                .defineInRange("windSpeedRain", 0.25, 0.0, 1.0);
+                .defineInRange("windSpeedRain", 0.35, 0.0, 1.0);
         WIND_SPEED_THUNDER = BUILDER.comment("Base wind speed modifier during thunderstorms.")
-                .defineInRange("windSpeedThunder", 0.4, 0.0, 1.0);
+                .defineInRange("windSpeedThunder", 0.5, 0.0, 1.0);
         DISABLE_DURING_RAIN = BUILDER.comment("If true, outdoor dust will despawn and stop spawning during rain.")
                 .define("disableDuringRain", false);
         DISABLE_DURING_THUNDER = BUILDER.comment("If true, outdoor dust will despawn and stop spawning during thunderstorms.")
                 .define("disableDuringThunder", false);
         BUILDER.pop();
 
-
         BUILDER.push("Interactions and Actions");
         PLAYER_INTERACT_RADIUS = BUILDER.comment("Radius squared for player interaction (slashing/moving).")
                 .defineInRange("playerInteractRadius", 4.0, 0.0, 16.0);
-        
+
         BREAK_PARTICLE_COUNT = BUILDER.comment("Number of dust particles spawned when a block is broken.")
                 .defineInRange("breakParticleCount", 12, 0, 50);
         BREAK_PARTICLE_SPEED = BUILDER.comment("How fast the dust shoots out from a broken block.")
@@ -132,13 +158,14 @@ public class LightDustConfig {
                 .defineList("heatBlocks", DEFAULT_HEAT_BLOCKS, obj -> obj instanceof String && ((String) obj).split(",").length == 3);
         BUILDER.pop();
 
-        BUILDER.push("Experimental Features");
-        ENABLE_DUST_SETTLING = BUILDER.comment("If true, dust particles will visually settle and rest when hitting the ground.")
-                .define("enableDustSettling", true);
-        ENABLE_ENTITY_DISTURBANCE = BUILDER.comment("If true, non-player entities (mobs/projectiles) will kick up and disturb dust. (Can be performance heavy in mob farms)")
-                .define("enableEntityDisturbance", false);
-        ENTITY_PUSH_STRENGTH = BUILDER.comment("How strongly non-player entities push dust when moving through it.")
-                .defineInRange("entityPushStrength", 0.05, 0.0, 2.0);
+        BUILDER.push("Handheld lights (dynamic lights 'compat')");
+        ENABLE_HANDHELD_LIGHTS = BUILDER.comment("If true, items held in your hand will act as fake light sources, allowing dust to spawn and coloring the dust. You still need to install a dynamic lights mod. This only spawns dust")
+                .define("enableHandheldLights", false);
+        HANDHELD_LIGHT_ITEMS = BUILDER.comment(
+                "List of items/tags and their light properties.",
+                "Format: 'modid:item_name=radius,#HEXCOLOR' or '#modid:tag=radius,#HEXCOLOR'."
+        ).defineList("handheldLightItems", DEFAULT_HANDHELD_LIGHTS,
+                obj -> obj instanceof String && ((String) obj).contains("=") && ((String) obj).contains(","));
         BUILDER.pop();
 
         SPEC = BUILDER.build();

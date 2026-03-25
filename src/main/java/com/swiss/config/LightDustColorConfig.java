@@ -14,15 +14,42 @@ public class LightDustColorConfig {
 
     public static final List<String> DEFAULT_CUSTOM_TINTS = Arrays.asList(
         "minecraft:torch=#FFDB8A",
+        "minecraft:wall_torch=#FFDB8A",
         "minecraft:lantern=#FFDB8A",
+        "minecraft:campfire=#FFDB8A",
+        "minecraft:glowstone=#FFD273",
+        "minecraft:shroomlight=#FF9933",
+        "minecraft:jack_o_lantern=#FF9933",
+ 
         "minecraft:soul_torch=#4CBAFF",
+        "minecraft:soul_wall_torch=#4CBAFF",
         "minecraft:soul_lantern=#4CBAFF",
         "minecraft:soul_campfire=#4CBAFF",
-        "minecraft:redstone_torch=#FF4C4C",
-        "minecraft:redstone_lamp=#FF4C4C",
-        "minecraft:amethyst_cluster=#CC66FF",
-        "minecraft:glowstone=#FFD670",
-        "minecraft:shroomlight=#FF9933"
+
+        "minecraft:sea_lantern=#8CD9C9",
+        "minecraft:conduit=#66E5CC",
+
+        "minecraft:end_rod=#FFE6FF",
+        "minecraft:beacon=#99FFFF",
+        "minecraft:crying_obsidian=#B300FF",
+        "minecraft:amethyst_cluster=#B266FF",
+        "minecraft:large_amethyst_bud=#B266FF",
+        "minecraft:medium_amethyst_bud=#B266FF",
+        "minecraft:small_amethyst_bud=#B266FF",
+
+        "minecraft:redstone_torch=#FF0000",
+        "minecraft:redstone_wall_torch=#FF0000",
+        "minecraft:redstone_lamp=#FF3300",
+
+        "minecraft:ochre_froglight=#FFDCA8",
+        "minecraft:pearlescent_froglight=#FFE8E8",
+        "minecraft:verdant_froglight=#E8FFD4",
+
+        "minecraft:cave_vines=#FFB233",
+        "minecraft:cave_vines_plant=#FFB233",
+        "minecraft:glow_lichen=#99CCB3",
+        "minecraft:magma_block=#FF3300",
+        "minecraft:sea_pickle=#A8E64C"
     );
 
     public static final List<String> DEFAULT_BIOME_TINTS = Arrays.asList(
@@ -108,7 +135,7 @@ public class LightDustColorConfig {
         BUILDER.push("Color and Tinting");
         
         TINT_STRENGTH = BUILDER.comment("How strongly colored lights (like soul fire) tint the dust. 0.0 = no tint, 1.0 = full color")
-            .defineInRange("tintStrength", 0.6, 0.0, 1.0);
+            .defineInRange("tintStrength", 0.45, 0.0, 1.0);
             
         CUSTOM_TINTS = BUILDER.comment(
             "List of blocks and their hex colors for dust tinting.",

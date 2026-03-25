@@ -32,6 +32,12 @@ public class LightDust {
             "lightdust/colors.toml"
         );
 
+        net.minecraftforge.fml.ModLoadingContext.get().registerConfig(
+            net.minecraftforge.fml.config.ModConfig.Type.COMMON, 
+            com.lightdust.config.LightDustExperimentalConfig.SPEC,
+            "lightdust/experimental.toml"
+        );
+
         com.lightdust.init.ParticleInit.PARTICLES.register(modEventBus);
     }
 
