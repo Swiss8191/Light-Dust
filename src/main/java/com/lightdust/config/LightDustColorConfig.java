@@ -1,16 +1,15 @@
 package com.lightdust.config;
+
 import net.minecraftforge.common.ForgeConfigSpec;
+import org.apache.commons.lang3.tuple.Pair;
+
 import java.util.Arrays;
 import java.util.List;
 
 public class LightDustColorConfig {
-    public static final ForgeConfigSpec.Builder BUILDER = new ForgeConfigSpec.Builder();
-    public static final ForgeConfigSpec SPEC;
 
-    public static final ForgeConfigSpec.DoubleValue TINT_STRENGTH;
-    public static final ForgeConfigSpec.ConfigValue<List<? extends String>> CUSTOM_TINTS;
-    public static final ForgeConfigSpec.ConfigValue<List<? extends String>> CUSTOM_BIOME_TINTS;
-    public static final ForgeConfigSpec.ConfigValue<List<? extends String>> CAVE_BIOME_TRIGGERS;
+    public static final Color COLOR;
+    public static final ForgeConfigSpec SPEC;
 
     public static final List<String> DEFAULT_CUSTOM_TINTS = Arrays.asList(
         "minecraft:torch=#FFDB8A",
@@ -133,40 +132,56 @@ public class LightDustColorConfig {
     );
 
     static {
-        BUILDER.push("Color and Tinting");
-        
-        TINT_STRENGTH = BUILDER.comment("How strongly colored lights (like soul fire) tint the dust. 0.0 = no tint, 1.0 = full color (I suggest higher values 0.75+ for HD dust and lower for legacy dust)")
-            .defineInRange("tintStrength", 0.75, 0.0, 1.0);
+        final Pair<Color, ForgeConfigSpec> specPair = new ForgeConfigSpec.Builder().configure(Color::new);
+        SPEC = specPair.getRight();
+        COLOR = specPair.getLeft();
+    }
+
+    public static class Color {
+
+        public ForgeConfigSpec.DoubleValue tintStrength;
+        public ForgeConfigSpec.ConfigValue<List<? extends String>> customTints;
+        public ForgeConfigSpec.ConfigValue<List<? extends String>> customBiomeTints;
+        public ForgeConfigSpec.ConfigValue<List<? extends String>> caveBiomeTriggers;
+
+        public Color(ForgeConfigSpec.Builder builder) {
+            initColorAndTinting(builder);
+        }
+
+        private void initColorAndTinting(ForgeConfigSpec.Builder builder) {
+            builder.push("Color and Tinting");
             
-        CUSTOM_TINTS = BUILDER.comment(
-            "List of blocks and their hex colors for dust tinting.",
-            "Format: 'modid:block_name=#RRGGBB'",
-            "Note: The block must actually emit light for the tint to apply. Make sure to include the '#' before the hex code!"
-        ).defineList("customTints",
-            DEFAULT_CUSTOM_TINTS,
-            obj -> obj instanceof String && ((String) obj).contains("=") && ((String) obj).contains("#")
-        );
+            tintStrength = builder.comment("How strongly colored lights (like soul fire) tint the dust. 0.0 = no tint, 1.0 = full color (I suggest higher values 0.75+ for HD dust and lower for legacy dust)")
+                .defineInRange("tintStrength", 0.75, 0.0, 1.0);
+                
+            customTints = builder.comment(
+                "List of blocks and their hex colors for dust tinting.",
+                "Format: 'modid:block_name=#RRGGBB'",
+                "Note: The block must actually emit light for the tint to apply. Make sure to include the '#' before the hex code!"
+            ).defineList("customTints",
+                DEFAULT_CUSTOM_TINTS,
+                obj -> obj instanceof String && ((String) obj).contains("=") && ((String) obj).contains("#")
+            );
 
-        CUSTOM_BIOME_TINTS = BUILDER.comment(
-            "List of biomes and their base ambient dust colors.",
-            "Format: 'modid:biome_name=#RRGGBB'",
-            "These act as the base color of the dust before any block lights affect it."
-        ).defineList("customBiomeTints",
-            DEFAULT_BIOME_TINTS,
-            obj -> obj instanceof String && ((String) obj).contains("=") && ((String) obj).contains("#")
-        );
+            customBiomeTints = builder.comment(
+                "List of biomes and their base ambient dust colors.",
+                "Format: 'modid:biome_name=#RRGGBB'",
+                "These act as the base color of the dust before any block lights affect it."
+            ).defineList("customBiomeTints",
+                DEFAULT_BIOME_TINTS,
+                obj -> obj instanceof String && ((String) obj).contains("=") && ((String) obj).contains("#")
+            );
 
-        CAVE_BIOME_TRIGGERS = BUILDER.comment(
-            "List of blocks that trigger a specific ambient dust color when found underground.",
-            "Useful for modded caves or overriding vanilla ones.",
-            "Format: 'modid:block_name=#RRGGBB'",
-            "The mod will scan for these blocks and change the dust color if enough are nearby. Blocks sharing the same hex color are counted together!"
-        ).defineList("caveBiomeTriggers",
-            DEFAULT_CAVE_TRIGGERS,
-            obj -> obj instanceof String && ((String) obj).contains("=") && ((String) obj).contains("#")
-        );
-        BUILDER.pop();
-        
-        SPEC = BUILDER.build();
+            caveBiomeTriggers = builder.comment(
+                "List of blocks that trigger a specific ambient dust color when found underground.",
+                "Useful for modded caves or overriding vanilla ones.",
+                "Format: 'modid:block_name=#RRGGBB'",
+                "The mod will scan for these blocks and change the dust color if enough are nearby. Blocks sharing the same hex color are counted together!"
+            ).defineList("caveBiomeTriggers",
+                DEFAULT_CAVE_TRIGGERS,
+                obj -> obj instanceof String && ((String) obj).contains("=") && ((String) obj).contains("#")
+            );
+            builder.pop();
+        }
     }
 }

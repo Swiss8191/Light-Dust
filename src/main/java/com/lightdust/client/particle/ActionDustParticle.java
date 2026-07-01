@@ -1,6 +1,8 @@
 package com.lightdust.client.particle;
 
 import com.lightdust.config.LightDustConfig;
+import com.lightdust.config.LightDustColorConfig;
+import com.lightdust.config.LightDustExperimentalConfig;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.particle.*;
 import net.minecraft.core.particles.SimpleParticleType;
@@ -20,8 +22,8 @@ public class ActionDustParticle extends TextureSheetParticle {
         this.yd = dy;
         this.zd = dz;
         
-        this.quadSize = com.lightdust.config.LightDustConfig.PARTICLE_SIZE.get().floatValue() * 1.5F;
-        this.baseAlpha = com.lightdust.config.LightDustConfig.AMBIENT_DUST_OPACITY.get().floatValue() * 1.5F;
+        this.quadSize = LightDustConfig.COMMON.particleSize.get().floatValue() * 1.5F;
+        this.baseAlpha = LightDustConfig.COMMON.ambientDustOpacity.get().floatValue() * 1.5F;
         this.lifetime = 40 + level.random.nextInt(30);
         this.gravity = 0.00F; 
         this.hasPhysics = true;
@@ -42,7 +44,6 @@ public class ActionDustParticle extends TextureSheetParticle {
             float blockR = ((CURRENT_BLOCK_COLOR >> 16) & 0xFF) / 255.0F;
             float blockG = ((CURRENT_BLOCK_COLOR >> 8) & 0xFF) / 255.0F;
             float blockB = (CURRENT_BLOCK_COLOR & 0xFF) / 255.0F;
-            
             r = (r * 0.2F) + (blockR * 0.8F);
             g = (g * 0.2F) + (blockG * 0.8F);
             b = (b * 0.2F) + (blockB * 0.8F);
@@ -60,17 +61,15 @@ public class ActionDustParticle extends TextureSheetParticle {
 
         float[] lightTint = DustParticle.getNearbyTint(level, pos);
 
-        float strength = com.lightdust.config.LightDustColorConfig.TINT_STRENGTH.get().floatValue() * 0.3F;
-        
+        float strength = LightDustColorConfig.COLOR.tintStrength.get().floatValue() * 0.3F;
         float rVar = (level.random.nextFloat() - 0.5F) * 0.1F;
         float gVar = (level.random.nextFloat() - 0.5F) * 0.1F;
         float bVar = (level.random.nextFloat() - 0.5F) * 0.1F;
 
         if (lightTint != null && strength > 0) {
-            float illuminatedR = baseR * lightTint[0] * 1.5F; 
+            float illuminatedR = baseR * lightTint[0] * 1.5F;
             float illuminatedG = baseG * lightTint[1] * 1.5F;
             float illuminatedB = baseB * lightTint[2] * 1.5F;
-            
             this.rCol = net.minecraft.util.Mth.clamp((baseR * (1 - strength) + illuminatedR * strength) + rVar, 0.0F, 1.0F);
             this.gCol = net.minecraft.util.Mth.clamp((baseG * (1 - strength) + illuminatedG * strength) + gVar, 0.0F, 1.0F);
             this.bCol = net.minecraft.util.Mth.clamp((baseB * (1 - strength) + illuminatedB * strength) + bVar, 0.0F, 1.0F);
@@ -104,7 +103,7 @@ public class ActionDustParticle extends TextureSheetParticle {
             return;
         }
 
-        if (this.onGround && com.lightdust.config.LightDustExperimentalConfig.ENABLE_DUST_SETTLING.get()) {
+        if (this.onGround && LightDustExperimentalConfig.EXPERIMENTAL.enableDustSettling.get()) {
             this.xd = 0.0;
             this.zd = 0.0;
             if (this.yd < 0.0) {
@@ -127,7 +126,7 @@ public class ActionDustParticle extends TextureSheetParticle {
             double sinX = net.minecraft.util.Mth.sin(time * 0.8f + seed) * 0.0002;
             double cosZ = net.minecraft.util.Mth.cos(time * 1.1f + seed) * 0.0002;
             double microTurbulence = (this.level.random.nextDouble() - 0.5) * 0.0002;
-            double driftDown = (LightDustConfig.ACTION_DUST_GRAVITY.get() * 0.001) + (this.level.random.nextDouble() * 0.001);
+            double driftDown = (LightDustConfig.COMMON.actionDustGravity.get() * 0.001) + (this.level.random.nextDouble() * 0.001);
             
             this.xd += sinX + microTurbulence;
             this.zd += cosZ + (microTurbulence * 0.5);
@@ -137,11 +136,10 @@ public class ActionDustParticle extends TextureSheetParticle {
         double prevXd = this.xd;
         double prevYd = this.yd;
         double prevZd = this.zd;
-
         this.move(this.xd, this.yd, this.zd);
 
         if (!this.onGround) {
-            double bounceForce = LightDustConfig.ACTION_DUST_BOUNCE.get();
+            double bounceForce = LightDustConfig.COMMON.actionDustBounce.get();
             if (this.xd != prevXd) {
                 this.xd = -prevXd * bounceForce;
             }
@@ -163,7 +161,7 @@ public class ActionDustParticle extends TextureSheetParticle {
                 this.xd = 0.0;
                 this.yd = 0.0;
                 this.zd = 0.0;
-                this.rotSpeed = 0.0F; 
+                this.rotSpeed = 0.0F;
             }
         } else {
             this.xd *= 0.92D;

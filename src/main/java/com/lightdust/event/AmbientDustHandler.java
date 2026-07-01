@@ -3,12 +3,13 @@ package com.lightdust.event;
 import com.lightdust.LightDust;
 import com.lightdust.client.particle.DustParticle;
 import com.lightdust.config.LightDustConfig;
-import com.lightdust.init.ParticleInit;
 import com.lightdust.config.LightDustExperimentalConfig;
+import com.lightdust.init.ParticleInit;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
-import net.minecraft.tags.FluidTags;
+import net.minecraft.core.particles.ParticleOptions;
+import net.minecraft.core.particles.SimpleParticleType;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LightLayer;
@@ -20,8 +21,6 @@ import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.level.LevelEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
-import net.minecraft.core.particles.SimpleParticleType;
-import net.minecraft.core.particles.ParticleOptions;
 import net.minecraftforge.registries.RegistryObject;
 
 @Mod.EventBusSubscriber(modid = LightDust.MODID, value = Dist.CLIENT)
@@ -43,13 +42,33 @@ public class AmbientDustHandler {
         }
     }
     public static final java.util.List<MovingEntityData> ACTIVE_MOVING_ENTITIES = new java.util.ArrayList<>();
-
     private static final java.util.List<BlockPos> VALID_SPAWN_SPACES = new java.util.ArrayList<>();
     private static long lastBfsTick = 0;
 
-    private static void updateSpawnVolumeBFS(Player player, Level level, int radius) {
+    private static void updateSpawnVolumeFAST(Player player, Level level, int radius) {
         VALID_SPAWN_SPACES.clear();
-        int maxNodes = 1200; 
+        int maxNodes = LightDustConfig.COMMON.fastSpawnChecks.get(); 
+        BlockPos startPos = player.blockPosition().above();
+        net.minecraft.util.RandomSource random = level.getRandom();
+
+        for (int i = 0; i < maxNodes * 3 && VALID_SPAWN_SPACES.size() < maxNodes; i++) {
+            int rx = startPos.getX() + random.nextInt(radius * 2 + 1) - radius;
+            int ry = startPos.getY() + random.nextInt(radius + 3) - 2;
+            int rz = startPos.getZ() + random.nextInt(radius * 2 + 1) - radius;
+            
+            BlockPos checkPos = new BlockPos(rx, ry, rz);
+            if (level.hasChunkAt(checkPos)) {
+                BlockState state = level.getBlockState(checkPos);
+                if (state.isAir() || state.getCollisionShape(level, checkPos).isEmpty()) {
+                    VALID_SPAWN_SPACES.add(checkPos);
+                }
+            }
+        }
+    }
+
+    private static void updateSpawnVolumeFANCY(Player player, Level level, int radius) {
+        VALID_SPAWN_SPACES.clear();
+        int maxNodes = LightDustConfig.COMMON.fancySpawnChecks.get(); 
         int radiusSqr = radius * radius;
         
         BlockPos startPos = player.blockPosition().above();
@@ -77,7 +96,7 @@ public class AmbientDustHandler {
     }
 
     private static ParticleOptions p(RegistryObject<SimpleParticleType> n, RegistryObject<SimpleParticleType> h) {
-        return LightDustConfig.USE_HD_PARTICLES.get() ? h.get() : n.get();
+        return LightDustConfig.COMMON.useHdParticles.get() ? h.get() : n.get();
     }
 
     @SubscribeEvent
@@ -97,18 +116,18 @@ public class AmbientDustHandler {
         Level level = mc.level;
 
         long currentTick = level.getGameTime();
-        if (currentTick % 20 == 0) {
-            DustParticle.TINT_CACHE.clear();
-            DustParticle.BIOME_CACHE.clear();
-            DustParticle.BEHAVIOR_CACHE.clear();
-            DustParticle.DRAFT_CACHE.clear();
-        }
 
-        int scanRate = com.lightdust.config.LightDustExperimentalConfig.ENTITY_SCAN_RATE.get();
+        if (currentTick % 400 == 0) DustParticle.TINT_CACHE.clear();
+        if (currentTick % 400 == 5) DustParticle.BIOME_CACHE.clear();
+        if (currentTick % 400 == 10) DustParticle.BEHAVIOR_CACHE.clear();
+
+        com.lightdust.client.environment.GlobalWindGrid.tick(level, player.blockPosition());
+
+        int scanRate = LightDustExperimentalConfig.EXPERIMENTAL.entityScanRate.get();
         if (currentTick % scanRate == 0) {
             ACTIVE_MOVING_ENTITIES.clear();
-            if (com.lightdust.config.LightDustExperimentalConfig.ENABLE_ENTITY_DISTURBANCE.get()) {
-                double scanRadius = LightDustConfig.AMBIENT_RADIUS.get();
+            if (LightDustExperimentalConfig.EXPERIMENTAL.enableEntityDisturbance.get()) {
+                double scanRadius = LightDustConfig.COMMON.ambientRadius.get();
                 net.minecraft.world.phys.AABB playerBounds = player.getBoundingBox().inflate(scanRadius);
 
                 java.util.List<net.minecraft.world.entity.Entity> entities = level.getEntities((net.minecraft.world.entity.Entity) null, playerBounds,
@@ -129,23 +148,23 @@ public class AmbientDustHandler {
         }
 
         float currentFallDistance = player.fallDistance;
-        if (player.onGround() && lastFallDistance > 3.0f) {
+        if (LightDustConfig.COMMON.enableHeavyLandingDust.get() && player.onGround() && lastFallDistance > 3.0f) {
             BlockPos pos = player.blockPosition();
             BlockPos groundPos = pos.below();
             
             if (level.getFluidState(pos).isEmpty()) {
                 
                 int tempColor = -1;
-                if (com.lightdust.config.LightDustConfig.ENABLE_DYNAMIC_BLOCK_COLORS.get()) {
+                if (LightDustConfig.COMMON.enableDynamicBlockColors.get()) {
                     tempColor = level.getBlockState(groundPos).getMapColor(level, groundPos).col;
                 }
 
-                int maxParticles = LightDustConfig.HEAVY_LANDING_MAX_PARTICLES.get();
-                int multiplier = LightDustConfig.HEAVY_LANDING_PARTICLE_MULTIPLIER.get();
+                int maxParticles = LightDustConfig.COMMON.heavyLandingMaxParticles.get();
+                int multiplier = LightDustConfig.COMMON.heavyLandingParticleMultiplier.get();
                 int count = Math.min(maxParticles, (int) (lastFallDistance * multiplier));
                 double maxRadius = Math.min(5.0, 1.5 + (lastFallDistance * 0.1));
-                double upBase = LightDustConfig.HEAVY_LANDING_UPWARD_SPEED.get();
-                double outBase = LightDustConfig.HEAVY_LANDING_OUTWARD_SPEED.get();
+                double upBase = LightDustConfig.COMMON.heavyLandingUpwardSpeed.get();
+                double outBase = LightDustConfig.COMMON.heavyLandingOutwardSpeed.get();
                 try {
                     com.lightdust.client.particle.ActionDustParticle.CURRENT_BLOCK_COLOR = tempColor;
                     for (int i = 0; i < count; i++) {
@@ -176,23 +195,21 @@ public class AmbientDustHandler {
                 
                 DustParticle.LANDING_IMPACT_POS = player.position();
                 DustParticle.LANDING_IMPACT_TICK = level.getGameTime();
-                DustParticle.LANDING_IMPACT_FORCE = LightDustConfig.HEAVY_LANDING_AMBIENT_PUSH.get() * 0.001;
-                DustParticle.LANDING_IMPACT_RADIUS = LightDustConfig.HEAVY_LANDING_AMBIENT_RADIUS.get();
+                DustParticle.LANDING_IMPACT_FORCE = LightDustConfig.COMMON.heavyLandingAmbientPush.get() * 0.001;
+                DustParticle.LANDING_IMPACT_RADIUS = LightDustConfig.COMMON.heavyLandingAmbientRadius.get();
             }
         }
 
-        lastFallDistance = player.onGround() ?
-        0.0f : currentFallDistance;
+        lastFallDistance = player.onGround() ? 0.0f : currentFallDistance;
 
         double playerVelocitySqr = player.getDeltaMovement().lengthSqr();
         boolean isMovingFast = playerVelocitySqr > 0.005;
 
-        int configRadius = LightDustConfig.AMBIENT_RADIUS.get();
+        int configRadius = LightDustConfig.COMMON.ambientRadius.get();
         int radius = isMovingFast ? Math.min(5, configRadius) : configRadius; 
         
-        int baseMaxCap = LightDustConfig.AMBIENT_BLOCK_CAP.get();
-        int maxCap = isMovingFast ?
-        Math.max(1, baseMaxCap / 2) : baseMaxCap;
+        int baseMaxCap = LightDustConfig.COMMON.ambientBlockCap.get();
+        int maxCap = isMovingFast ? Math.max(1, baseMaxCap / 2) : baseMaxCap;
 
         BlockPos playerPos = player.blockPosition();
         BlockPos.MutableBlockPos mutablePos = new BlockPos.MutableBlockPos();
@@ -202,21 +219,25 @@ public class AmbientDustHandler {
 
         if (currentTick - lastBfsTick >= 10) {
             lastBfsTick = currentTick;
-            updateSpawnVolumeBFS(player, level, radius);
+            if (LightDustConfig.COMMON.spawningMode.get() == LightDustConfig.SpawningMode.FANCY) {
+                updateSpawnVolumeFANCY(player, level, radius);
+            } else {
+                updateSpawnVolumeFAST(player, level, radius);
+            }
         }
 
         if (!VALID_SPAWN_SPACES.isEmpty()) {
-            int spawnAttempts = isMovingFast ?
-            80 : 30; 
+            int spawnAttempts = isMovingFast ? 80 : 30; 
             
             for (int i = 0; i < spawnAttempts; i++) {
                 mutablePos.set(VALID_SPAWN_SPACES.get(level.random.nextInt(VALID_SPAWN_SPACES.size())));
-                if (LightDustConfig.ENABLE_MAX_Y_LEVEL.get() && mutablePos.getY() > LightDustConfig.MAX_Y_LEVEL.get()) {
+                if (LightDustConfig.COMMON.enableMaxYLevel.get() && mutablePos.getY() > LightDustConfig.COMMON.maxYLevel.get()) {
                     continue;
                 }
 
                 long posKey = BlockPos.asLong(mutablePos.getX(), mutablePos.getY(), mutablePos.getZ());
                 int localMaxCap = maxCap;   
+                
                 if (mutablePos.getY() < 0) {
                     double depthFactor = Math.min(1.0, (double) (-mutablePos.getY()) / 64.0);
                     localMaxCap = (int) (maxCap * (1.0 + depthFactor));
@@ -228,14 +249,13 @@ public class AmbientDustHandler {
                 }
 
                 int blockLight = level.getBrightness(LightLayer.BLOCK, mutablePos);
-                int minLight = LightDustConfig.MIN_BLOCK_LIGHT.get();
+                int minLight = LightDustConfig.COMMON.minBlockLight.get();
                 boolean isDarkCave = mutablePos.getY() < 60 && !level.canSeeSky(mutablePos) && blockLight < minLight;
                 if (blockLight < minLight && !isDarkCave && heldLight == null) {
                     continue;
                 }
 
-                int targetCap = isDarkCave ?
-                Math.max(1, (int) (localMaxCap * 0.15f)) : localMaxCap;
+                int targetCap = isDarkCave ? Math.max(1, (int) (localMaxCap * 0.15f)) : localMaxCap;
                 
                 if (currentCount < targetCap) {
                     DustParticle.PENDING_POS = mutablePos.immutable();
@@ -259,14 +279,14 @@ public class AmbientDustHandler {
 
         if (tick % 60 == 0) {
             try {
-                double hardCap = LightDustConfig.AMBIENT_HARD_CAP.get();
+                double hardCap = LightDustConfig.COMMON.ambientHardCap.get();
                 double pruneDistSqr = (hardCap + 1) * (hardCap + 1);
                 DustParticle.AMBIENT_COUNTS.keySet().removeIf(key -> BlockPos.of(key).distSqr(playerPos) > pruneDistSqr);
             } catch (Exception e) {
             }
         }
 
-        if (com.lightdust.client.particle.DustParticle.LOUD_NOISE_POS != null) {
+        if (LightDustConfig.COMMON.enableCaveTremors.get() && com.lightdust.client.particle.DustParticle.LOUD_NOISE_POS != null) {
             long ageInTicks = level.getGameTime() - com.lightdust.client.particle.DustParticle.LOUD_NOISE_TICK;
             if (ageInTicks < 80) { 
                 double intensity = Math.pow(Math.max(0.0, 1.0 - (ageInTicks / 80.0)), 2.5);
@@ -275,21 +295,22 @@ public class AmbientDustHandler {
                 double maxRadius = 32.0;
                 double distRatio = Math.min(1.0, waveDist / maxRadius);
 
-                double expoFalloff = Math.pow(1.0 - distRatio, com.lightdust.config.LightDustConfig.TREMOR_FALLOFF_EXPONENT.get());
-                double epicenterDensityBoost = (distRatio < 0.1) ? com.lightdust.config.LightDustConfig.TREMOR_EPICENTER_MULTIPLIER.get() : 1.0;
+                double expoFalloff = Math.pow(1.0 - distRatio, LightDustConfig.COMMON.tremorFalloffExponent.get());
+                double epicenterDensityBoost = (distRatio < 0.1) ? LightDustConfig.COMMON.tremorEpicenterMultiplier.get() : 1.0;
 
-                int baseCount = com.lightdust.config.LightDustConfig.CAVE_TREMOR_PARTICLE_COUNT.get();
+                int baseCount = LightDustConfig.COMMON.caveTremorParticleCount.get();
                 double circumference = 2 * Math.PI * Math.max(1.0, waveDist);
 
                 int totalRingParticles = (int) ((circumference / 10.0) * baseCount * intensity * epicenterDensityBoost);
-                int ambientRadius = com.lightdust.config.LightDustConfig.AMBIENT_RADIUS.get();
+                int ambientRadius = LightDustConfig.COMMON.ambientRadius.get();
                 int ambientRadiusSqr = ambientRadius * ambientRadius;
+                
                 net.minecraft.core.BlockPos.MutableBlockPos mut = new net.minecraft.core.BlockPos.MutableBlockPos();
                 java.util.Map<Long, Integer> roofCache = new java.util.HashMap<>();
                 java.util.Map<Long, Integer> floorCache = new java.util.HashMap<>();
                 for (int i = 0; i < totalRingParticles; i++) {
                     float angle = level.random.nextFloat() * net.minecraft.util.Mth.TWO_PI;
-                    double actualDist = waveDist - (level.random.nextDouble() * com.lightdust.config.LightDustConfig.TREMOR_WAVEFRONT_THICKNESS.get()); 
+                    double actualDist = waveDist - (level.random.nextDouble() * LightDustConfig.COMMON.tremorWavefrontThickness.get()); 
                     if (actualDist < 0) continue;
                     double targetX = com.lightdust.client.particle.DustParticle.LOUD_NOISE_POS.x + net.minecraft.util.Mth.cos(angle) * actualDist;
                     double targetZ = com.lightdust.client.particle.DustParticle.LOUD_NOISE_POS.z + net.minecraft.util.Mth.sin(angle) * actualDist;
@@ -300,9 +321,10 @@ public class AmbientDustHandler {
                     mut.set(targetX, randomYStart, targetZ);
 
                     long colKey = net.minecraft.core.BlockPos.asLong((int)targetX, 0, (int)targetZ);
-                    boolean forceCeiling = level.random.nextDouble() < com.lightdust.config.LightDustConfig.TREMOR_CEILING_BIAS.get();
+                    boolean forceCeiling = level.random.nextDouble() < LightDustConfig.COMMON.tremorCeilingBias.get();
                     net.minecraft.core.Direction searchDir = forceCeiling ? net.minecraft.core.Direction.UP : (level.random.nextBoolean() ? net.minecraft.core.Direction.UP : net.minecraft.core.Direction.DOWN);
                     boolean foundSurface = false;
+                    
                     java.util.Map<Long, Integer> activeCache = (searchDir == net.minecraft.core.Direction.UP) ? roofCache : floorCache;
                     if (activeCache.containsKey(colKey)) {
                         mut.set(targetX, activeCache.get(colKey), targetZ);
@@ -322,10 +344,8 @@ public class AmbientDustHandler {
                         }
                         
                         if (!foundSurface) {
-                       
-
                              searchDir = searchDir.getOpposite();
-                            activeCache = (searchDir == net.minecraft.core.Direction.UP) ? roofCache : floorCache;
+                             activeCache = (searchDir == net.minecraft.core.Direction.UP) ? roofCache : floorCache;
                             if (activeCache.containsKey(colKey)) {
                                 mut.set(targetX, activeCache.get(colKey), targetZ);
                                 foundSurface = true;
@@ -341,25 +361,23 @@ public class AmbientDustHandler {
                                 }
                             }
                         }
-             
-
                     }
                     
                     if (foundSurface) {
                         int tempColor = -1;
-                        if (com.lightdust.config.LightDustConfig.ENABLE_DYNAMIC_BLOCK_COLORS.get()) {
+                        if (LightDustConfig.COMMON.enableDynamicBlockColors.get()) {
                             tempColor = level.getBlockState(mut).getMapColor(level, mut).col;
                         }
                         
-                        double minGrav = com.lightdust.config.LightDustConfig.TREMOR_MIN_GRAVITY.get() * 0.001;
-                        double maxGrav = com.lightdust.config.LightDustConfig.TREMOR_MAX_GRAVITY.get() * 0.001;
+                        double minGrav = LightDustConfig.COMMON.tremorMinGravity.get() * 0.001;
+                        double maxGrav = LightDustConfig.COMMON.tremorMaxGravity.get() * 0.001;
                         double baseDynamicGravity = minGrav + ((maxGrav - minGrav) * expoFalloff);
                         
                         float finalGravity;
                         if (searchDir == net.minecraft.core.Direction.UP) {
-                            finalGravity = (float) (baseDynamicGravity * com.lightdust.config.LightDustConfig.TREMOR_ROOF_MULTIPLIER.get());
+                            finalGravity = (float) (baseDynamicGravity * LightDustConfig.COMMON.tremorRoofMultiplier.get());
                         } else {
-                            finalGravity = (float) (baseDynamicGravity * com.lightdust.config.LightDustConfig.TREMOR_FLOOR_MULTIPLIER.get());
+                            finalGravity = (float) (baseDynamicGravity * LightDustConfig.COMMON.tremorFloorMultiplier.get());
                         }
 
                         double px = mut.getX() + level.random.nextDouble();
@@ -370,7 +388,7 @@ public class AmbientDustHandler {
                         double pushDir = (searchDir == net.minecraft.core.Direction.UP) ? -1.05 : 1.4;
                         double baseVerticalForce = (searchDir == net.minecraft.core.Direction.UP) ? 0.06 : 0.08;
                         double vx = (level.random.nextDouble() - 0.5) * (0.05 * intensity * velMult * chaos);
-                        double minKick = (searchDir == net.minecraft.core.Direction.DOWN) ? (0.02 * com.lightdust.config.LightDustConfig.TREMOR_FLOOR_KICK_FORCE.get()) : 0.0;
+                        double minKick = (searchDir == net.minecraft.core.Direction.DOWN) ? (0.02 * LightDustConfig.COMMON.tremorFloorKickForce.get()) : 0.0;
                         double vy = (pushDir * baseVerticalForce * velMult * intensity) + (level.random.nextDouble() - 0.5) * 0.05 + (pushDir * minKick);
                         double vz = (level.random.nextDouble() - 0.5) * (0.05 * intensity * velMult * chaos);
                         try {
@@ -388,40 +406,39 @@ public class AmbientDustHandler {
 
         if (mc.options.keyAttack.isDown()) {
             if (lastTargetPos != null && level.getBlockState(lastTargetPos).isAir()) {
-             
 
-                int count = LightDustConfig.BREAK_PARTICLE_COUNT.get();
-                double speed = LightDustConfig.BREAK_PARTICLE_SPEED.get();
+                if (LightDustConfig.COMMON.enableBlockBreakingDust.get()) {
+                    int count = LightDustConfig.COMMON.breakParticleCount.get();
+                    double speed = LightDustConfig.COMMON.breakParticleSpeed.get();
 
-                int tempColor = -1;
-                if (LightDustConfig.ENABLE_DYNAMIC_BLOCK_COLORS.get()) {
-                    tempColor = lastTargetColor;
-                }
-
-                double normX = lastTargetFace != null ?
-                lastTargetFace.getStepX() : 0;
-                double normY = lastTargetFace != null ? lastTargetFace.getStepY() : 1; 
-                double normZ = lastTargetFace != null ?
-                lastTargetFace.getStepZ() : 0;
-                double originX = lastTargetHitVec != null ? lastTargetHitVec.x : lastTargetPos.getX() + 0.5;
-                double originY = lastTargetHitVec != null ? lastTargetHitVec.y : lastTargetPos.getY() + 0.5;
-                double originZ = lastTargetHitVec != null ?
-                lastTargetHitVec.z : lastTargetPos.getZ() + 0.5;
-                
-                try {
-                    com.lightdust.client.particle.ActionDustParticle.CURRENT_BLOCK_COLOR = tempColor;
-                    for (int i = 0; i < count; i++) {
-                        double px = originX + (level.random.nextDouble() - 0.5) * 0.35;
-                        double py = originY + (level.random.nextDouble() - 0.5) * 0.35;
-                        double pz = originZ + (level.random.nextDouble() - 0.5) * 0.35;
-                        double vx = (normX * 0.6 + (level.random.nextDouble() - 0.5)) * speed;
-                        double vy = (normY * 0.6 + (level.random.nextDouble() - 0.5)) * speed;
-                        double vz = (normZ * 0.6 + (level.random.nextDouble() - 0.5)) * speed;
-                        
-                        level.addParticle(p(ParticleInit.ACTION_DUST_PARTICLE, ParticleInit.ACTION_DUST_PARTICLE_HD), px, py, pz, vx, vy, vz);
+                    int tempColor = -1;
+                    if (LightDustConfig.COMMON.enableDynamicBlockColors.get()) {
+                        tempColor = lastTargetColor;
                     }
-                } finally {
-                    com.lightdust.client.particle.ActionDustParticle.CURRENT_BLOCK_COLOR = -1;
+
+                    double normX = lastTargetFace != null ? lastTargetFace.getStepX() : 0;
+                    double normY = lastTargetFace != null ? lastTargetFace.getStepY() : 1; 
+                    double normZ = lastTargetFace != null ? lastTargetFace.getStepZ() : 0;
+                    
+                    double originX = lastTargetHitVec != null ? lastTargetHitVec.x : lastTargetPos.getX() + 0.5;
+                    double originY = lastTargetHitVec != null ? lastTargetHitVec.y : lastTargetPos.getY() + 0.5;
+                    double originZ = lastTargetHitVec != null ? lastTargetHitVec.z : lastTargetPos.getZ() + 0.5;
+                    
+                    try {
+                        com.lightdust.client.particle.ActionDustParticle.CURRENT_BLOCK_COLOR = tempColor;
+                        for (int i = 0; i < count; i++) {
+                            double px = originX + (level.random.nextDouble() - 0.5) * 0.35;
+                            double py = originY + (level.random.nextDouble() - 0.5) * 0.35;
+                            double pz = originZ + (level.random.nextDouble() - 0.5) * 0.35;
+                            double vx = (normX * 0.6 + (level.random.nextDouble() - 0.5)) * speed;
+                            double vy = (normY * 0.6 + (level.random.nextDouble() - 0.5)) * speed;
+                            double vz = (normZ * 0.6 + (level.random.nextDouble() - 0.5)) * speed;
+                            
+                            level.addParticle(p(ParticleInit.ACTION_DUST_PARTICLE, ParticleInit.ACTION_DUST_PARTICLE_HD), px, py, pz, vx, vy, vz);
+                        }
+                    } finally {
+                        com.lightdust.client.particle.ActionDustParticle.CURRENT_BLOCK_COLOR = -1;
+                    }
                 }
 
                 lastTargetPos = null;

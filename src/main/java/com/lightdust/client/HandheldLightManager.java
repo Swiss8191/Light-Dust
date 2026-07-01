@@ -27,28 +27,24 @@ public class HandheldLightManager {
     private static final Map<Item, LightData> ITEM_LIGHTS = new HashMap<>();
     private static final Map<TagKey<Item>, LightData> TAG_LIGHTS = new HashMap<>();
     private static boolean loaded = false;
-    
     private static boolean curiosChecked = false;
     private static boolean hasCurios = false;
     private static java.lang.reflect.Method getCuriosHelperMethod;
     private static java.lang.reflect.Method getEquippedCuriosMethod;
-    
     private static boolean accChecked = false;
     private static boolean hasAcc = false;
     private static java.lang.reflect.Method getAccMethod;
-    
     private static final Map<Class<?>, java.util.List<java.lang.reflect.Method>> itemStackGetters = new HashMap<>();
     private static final Map<Class<?>, java.util.List<java.lang.reflect.Method>> iterableGetters = new HashMap<>();
-
     private static long lastUpdateTick = -1;
     private static LightData cachedLight = null;
 
     public static void reload() {
         ITEM_LIGHTS.clear();
         TAG_LIGHTS.clear();
-        lastUpdateTick = -1; // Reset cache on reload
+        lastUpdateTick = -1; 
 
-        for (String entry : LightDustConfig.HANDHELD_LIGHT_ITEMS.get()) {
+        for (String entry : LightDustConfig.COMMON.handheldLightItems.get()) {
             try {
                 String[] parts = entry.split("=");
                 if (parts.length == 2) {
@@ -192,7 +188,7 @@ public class HandheldLightManager {
     }
 
     public static LightData getHeldLight(Player player) {
-        if (!LightDustConfig.ENABLE_HANDHELD_LIGHTS.get()) {
+        if (!LightDustConfig.COMMON.enableHandheldLights.get()) {
             return null;
         }
         if (!loaded) {
@@ -200,7 +196,7 @@ public class HandheldLightManager {
         }
 
         long currentTick = player.level().getGameTime();
-        if (currentTick == lastUpdateTick) {
+        if (currentTick - lastUpdateTick < 5) {
             return cachedLight;
         }
         lastUpdateTick = currentTick;

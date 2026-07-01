@@ -21,8 +21,8 @@ public class ExplosionDustParticle extends TextureSheetParticle {
         this.yd = dy;
         this.zd = dz;
 
-        this.quadSize = com.lightdust.config.LightDustConfig.PARTICLE_SIZE.get().floatValue() * 2.0F;
-        this.baseAlpha = com.lightdust.config.LightDustConfig.AMBIENT_DUST_OPACITY.get().floatValue() * 2.0F;
+        this.quadSize = com.lightdust.config.LightDustConfig.COMMON.particleSize.get().floatValue() * 2.0F;
+        this.baseAlpha = com.lightdust.config.LightDustConfig.COMMON.ambientDustOpacity.get().floatValue() * 2.0F;
         this.individualGravity = 0.001f + level.random.nextFloat() * 0.001f;
         this.individualFriction = 0.83f + level.random.nextFloat() * 0.1f;
         this.lifetime = 50 + level.random.nextInt(70);
@@ -46,14 +46,13 @@ public class ExplosionDustParticle extends TextureSheetParticle {
         int maxLight = Math.max(blockLight, skyLight);
         float intensity = Math.max(0f, (maxLight - 4) / 11.0f);
         float baseBrightness = 0.55F + (0.45F * intensity);
-
+        
         this.rCol = net.minecraft.util.Mth.clamp(r * baseBrightness, 0.0F, 1.0F);
         this.gCol = net.minecraft.util.Mth.clamp(g * baseBrightness, 0.0F, 1.0F);
         this.bCol = net.minecraft.util.Mth.clamp(b * baseBrightness, 0.0F, 1.0F);
 
         this.roll = level.random.nextFloat() * net.minecraft.util.Mth.TWO_PI;
         this.oRoll = this.roll;
-
         this.rotSpeed = (level.random.nextFloat() - 0.5F) * 0.5F; 
 
         this.pickSprite(sprites);
@@ -80,7 +79,6 @@ public class ExplosionDustParticle extends TextureSheetParticle {
         this.roll += this.rotSpeed;
 
         this.rotSpeed *= 0.92F;
-
         if (this.age > this.lifetime - 20) {
             this.alpha = this.baseAlpha * ((this.lifetime - this.age) / 20.0F);
         }
