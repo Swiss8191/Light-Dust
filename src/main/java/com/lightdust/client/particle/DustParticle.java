@@ -243,6 +243,7 @@ public class DustParticle extends TextureSheetParticle {
         }
 
         super.tick();
+
         if (!this.isDetached && this.ownerPos != null && (this.age + this.tickOffset) % 20 == 0) {
             if (this.ownerPos.distToCenterSqr(this.x, this.y, this.z) > 25.0) { 
                 long key = this.ownerPos.asLong();
@@ -366,10 +367,9 @@ public class DustParticle extends TextureSheetParticle {
 
                 float strength = LightDustColorConfig.COLOR.tintStrength.get().floatValue();
                 float baseR = this.cachedBiomeTint != null ?
-                    this.cachedBiomeTint[0] * baseBrightness : baseBrightness;
+                this.cachedBiomeTint[0] * baseBrightness : baseBrightness;
                 float baseG = this.cachedBiomeTint != null ? this.cachedBiomeTint[1] * baseBrightness : baseBrightness;
                 float baseB = this.cachedBiomeTint != null ? this.cachedBiomeTint[2] * baseBrightness : baseBrightness;
-                
                 if (blockTint != null && strength > 0) {
                     this.rCol = Mth.clamp((baseR * (1 - strength) + blockTint[0] * strength) + this.rVar, 0.0F, 1.0F);
                     this.gCol = Mth.clamp((baseG * (1 - strength) + blockTint[1] * strength) + this.gVar, 0.0F, 1.0F);
@@ -389,7 +389,8 @@ public class DustParticle extends TextureSheetParticle {
                 this.flowVectorY = (level.random.nextDouble() - 0.5) * 0.2; 
                 this.flowVectorZ = (level.random.nextDouble() - 0.5);
                 double len = Math.sqrt(this.flowVectorX * this.flowVectorX + this.flowVectorY * this.flowVectorY + this.flowVectorZ * this.flowVectorZ);
-                if (len > 0) { this.flowVectorX /= len; this.flowVectorY /= len; this.flowVectorZ /= len; }
+                if (len > 0) { this.flowVectorX /= len; this.flowVectorY /= len; this.flowVectorZ /= len;
+                }
                 this.flowInitialized = true;
             }
 
@@ -503,12 +504,11 @@ public class DustParticle extends TextureSheetParticle {
                 double dz = this.z - data.z;
                 double distSqr = dx*dx + dy*dy + dz*dz;
                 if (distSqr < 2.25) { 
-                    double dist = Math.sqrt(distSqr);
-                    if (dist < 0.1) dist = 0.1;
-                    
-                    this.xd += (dx / dist) * data.speed * pushConfig;
-                    this.yd += (dy / dist) * data.speed * pushConfig;
-                    this.zd += (dz / dist) * data.speed * pushConfig;
+                    double falloff = 1.0 - (distSqr / 2.25);
+                    double push = (data.speed * pushConfig * falloff) / Math.max(0.1, distSqr);
+                    this.xd += dx * push;
+                    this.yd += dy * push;
+                    this.zd += dz * push;
                     this.onGround = false; 
                 }
             }
@@ -526,9 +526,8 @@ public class DustParticle extends TextureSheetParticle {
                     double wavefrontDist = ageInTicks; 
 
                     if (Math.abs(dist - wavefrontDist) < 2.0) {
-
                         double forceFalloff = Math.max(0.0, 1.0 - (dist / 12.0));
-                        double pushForce = 0.1* forceFalloff; 
+                        double pushForce = 0.1 * forceFalloff; 
                         
                         this.xd += (dx / dist) * pushForce;
                         this.yd += (dy / dist) * pushForce;
@@ -542,18 +541,16 @@ public class DustParticle extends TextureSheetParticle {
         }
 
         if (LANDING_IMPACT_POS != null && level.getGameTime() - LANDING_IMPACT_TICK < 15) {
-            double maxRadius = LANDING_IMPACT_RADIUS;
+            double maxRadiusSqr = LANDING_IMPACT_RADIUS * LANDING_IMPACT_RADIUS;
             double distSqr = LANDING_IMPACT_POS.distanceToSqr(this.x, this.y, this.z);
-            if (distSqr < (maxRadius * maxRadius)) { 
-                double dist = Math.sqrt(distSqr);
-                if (dist < 0.1) dist = 0.1;
-                double push = (maxRadius - dist) * LANDING_IMPACT_FORCE;
-                if (push > 0) {
-                    this.xd += ((this.x - LANDING_IMPACT_POS.x) / dist) * push + (level.random.nextDouble() - 0.5) * 0.01;
-                    this.yd += ((this.y - LANDING_IMPACT_POS.y) / dist) * push * 0.5 + (level.random.nextDouble() - 0.5) * 0.01;
-                    this.zd += ((this.z - LANDING_IMPACT_POS.z) / dist) * push + (level.random.nextDouble() - 0.5) * 0.01;
-                    this.onGround = false;
-                }
+            if (distSqr < maxRadiusSqr) { 
+                double falloff = 1.0 - (distSqr / maxRadiusSqr);
+                double push = (LANDING_IMPACT_FORCE * falloff) / Math.max(0.1, distSqr);
+                
+                this.xd += (this.x - LANDING_IMPACT_POS.x) * push + (level.random.nextDouble() - 0.5) * 0.01;
+                this.yd += (this.y - LANDING_IMPACT_POS.y) * (push * 0.5) + (level.random.nextDouble() - 0.5) * 0.01;
+                this.zd += (this.z - LANDING_IMPACT_POS.z) * push + (level.random.nextDouble() - 0.5) * 0.01;
+                this.onGround = false;
             }
         }
 
@@ -668,48 +665,61 @@ public class DustParticle extends TextureSheetParticle {
         double jitterY = (level.random.nextDouble() - 0.5) * 0.015;
         double jitterZ = (level.random.nextDouble() - 0.5) * 0.015;
         
-        if (LightDustConfig.COMMON.enablePlayerInteraction.get() && player != null && player.distanceToSqr(this.x, this.y, this.z) < LightDustConfig.COMMON.playerInteractRadius.get()) {
-            double range = 2.0;
-            double dx = this.x - player.getX();
-            double dy = this.y - (player.getY() + 1.0); 
-            double dz = this.z - player.getZ();
-            double dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
-            if (dist < 0.01) dist = 0.01;
-            
-            double nx = dx / dist; double ny = dy / dist; double nz = dz / dist;
-            Vec3 pVel = player.getDeltaMovement();
-            double hSpeedSqr = pVel.x * pVel.x + pVel.z * pVel.z;
-            
-            if (player.swingTime > 0) {
-                Vec3 look = player.getLookAngle();
-                if ((nx * look.x) + (ny * look.y) + (nz * look.z) > 0.5) { 
-                    double slashForce = 0.002;
-                    this.xd += look.x * slashForce + (nx * 0.005) + jitterX;
-                    this.yd += look.y * slashForce + (ny * 0.005) + jitterY;
-                    this.zd += look.z * slashForce + (nz * 0.005) + jitterZ;
+        if (LightDustConfig.COMMON.enablePlayerInteraction.get() && player != null) {
+            double pDistSqr = player.distanceToSqr(this.x, this.y, this.z);
+            double interactRadiusSqr = LightDustConfig.COMMON.playerInteractRadius.get();
+
+            if (pDistSqr < interactRadiusSqr) {
+                double dx = this.x - player.getX();
+                double dy = this.y - (player.getY() + 1.0); 
+                double dz = this.z - player.getZ();
+                
+                double falloff = 1.0 - (pDistSqr / interactRadiusSqr); 
+                double invDistSqr = 1.0 / Math.max(0.1, pDistSqr); 
+                
+                Vec3 pVel = player.getDeltaMovement();
+                double velY = pVel.y;
+                
+                // Ignore constant downward gravity if the player is standing on the floor
+                if (player.onGround() && velY < 0) {
+                    velY = 0;
+                }
+                
+                // Changed to full 3D velocity to include jumping/falling momentum
+                double speedSqr = pVel.x * pVel.x + velY * velY + pVel.z * pVel.z; 
+                
+                if (player.swingTime > 0) {
+                    Vec3 look = player.getLookAngle();
+                    double dot = (dx * look.x + dy * look.y + dz * look.z) * invDistSqr;
+                    if (dot > 0.5) { 
+                        double slashForce = 0.002;
+                        this.xd += look.x * slashForce + (dx * 0.005 * invDistSqr) + jitterX;
+                        this.yd += look.y * slashForce + (dy * 0.005 * invDistSqr) + jitterY;
+                        this.zd += look.z * slashForce + (dz * 0.005 * invDistSqr) + jitterZ;
+                        this.onGround = false;
+                    }
+                }
+
+                if (player.isUsingItem() && player.getUseItem().getItem() instanceof ShieldItem) {
+                    Vec3 look = player.getLookAngle();
+                    double dot = (dx * look.x + dy * look.y + dz * look.z) * invDistSqr;
+                    if (dot > 0.3) {
+                        double shieldPush = 0.04 * invDistSqr;
+                        this.xd += (dx * shieldPush) + jitterX;
+                        this.yd += (dy * shieldPush) + jitterY;
+                        this.zd += (dz * shieldPush) + jitterZ;
+                        this.onGround = false;
+                    }
+                }
+
+                if (speedSqr > 0.0001) {
+                    // Optimized push calculation completely bypassing Math.sqrt
+                    double pushStrength = speedSqr * falloff * 0.25 * invDistSqr; 
+                    this.xd += (dx * pushStrength) + jitterX;
+                    this.yd += (dy * pushStrength) + jitterY;
+                    this.zd += (dz * pushStrength) + jitterZ;
                     this.onGround = false;
                 }
-            }
-
-            if (player.isUsingItem() && player.getUseItem().getItem() instanceof ShieldItem) {
-                Vec3 look = player.getLookAngle();
-                if ((nx * look.x) + (ny * look.y) + (nz * look.z) > 0.3) {
-                    double shieldPush = 0.04 / dist;
-                    this.xd += (nx * shieldPush) + jitterX;
-                    this.yd += (ny * shieldPush) + jitterY;
-                    this.zd += (nz * shieldPush) + jitterZ;
-                    this.onGround = false;
-                }
-            }
-
-            if (hSpeedSqr > 0.0001) {
-                double horizontalSpeed = Math.sqrt(hSpeedSqr);
-                double proximityFactor = (range - dist) / range;
-                double pushStrength = horizontalSpeed * proximityFactor * 0.05;
-                this.xd += (nx * pushStrength) + jitterX;
-                this.yd += (ny * pushStrength) + jitterY;
-                this.zd += (nz * pushStrength) + jitterZ;
-                this.onGround = false;
             }
         }
 
@@ -721,18 +731,16 @@ public class DustParticle extends TextureSheetParticle {
                 double pullX = (breakPos.getX() + 0.5) - this.x;
                 double pullY = (breakPos.getY() + 0.5) - this.y;
                 double pullZ = (breakPos.getZ() + 0.5) - this.z;
-                
                 double distSqrBreak = pullX * pullX + pullY * pullY + pullZ * pullZ;
                 double vacuumRadius = LightDustConfig.COMMON.breakVacuumRadius.get();
+                double vacuumRadiusSqr = vacuumRadius * vacuumRadius; 
                 
-                if (level.getBlockState(breakPos).isAir() && distSqrBreak < (vacuumRadius * vacuumRadius)) {
-                    double distBreak = Math.sqrt(distSqrBreak);
-                    if (distBreak < 0.1) distBreak = 0.1;
-                    double force = LightDustConfig.COMMON.breakVacuumForce.get() * 0.001;
-                    
-                    this.xd += (pullX / distBreak) * force + jitterX;
-                    this.yd += (pullY / distBreak) * force + jitterY;
-                    this.zd += (pullZ / distBreak) * force + jitterZ;
+                if (level.getBlockState(breakPos).isAir() && distSqrBreak < vacuumRadiusSqr) {
+                    double falloff = 1.0 - (distSqrBreak / vacuumRadiusSqr);
+                    double force = (LightDustConfig.COMMON.breakVacuumForce.get() * 0.001 * falloff) / Math.max(0.1, distSqrBreak);
+                    this.xd += pullX * force + jitterX;
+                    this.yd += pullY * force + jitterY;
+                    this.zd += pullZ * force + jitterZ;
                     this.onGround = false;
                 }
             }
