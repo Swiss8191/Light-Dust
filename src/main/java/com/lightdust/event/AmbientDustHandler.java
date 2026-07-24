@@ -277,12 +277,12 @@ public class AmbientDustHandler {
             }
         }
 
-        if (tick % 60 == 0) {
+        if (tick % 40 == 0) {
+            int pruneRadius = LightDustConfig.COMMON.ambientHardCap.get() + 2;
+            int pruneDistSqr = pruneRadius * pruneRadius;
             try {
-                double hardCap = LightDustConfig.COMMON.ambientHardCap.get();
-                double pruneDistSqr = (hardCap + 1) * (hardCap + 1);
                 DustParticle.AMBIENT_COUNTS.keySet().removeIf(key -> BlockPos.of(key).distSqr(playerPos) > pruneDistSqr);
-            } catch (Exception e) {
+            } catch (Exception ignored) {
             }
         }
 

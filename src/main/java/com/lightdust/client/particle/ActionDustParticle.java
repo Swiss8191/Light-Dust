@@ -15,6 +15,8 @@ public class ActionDustParticle extends TextureSheetParticle {
     public static int CURRENT_BLOCK_COLOR = -1;
     private float rotSpeed;
     private final float baseAlpha;
+    private final double cachedGravity;
+    private final double cachedBounce;
 
     protected ActionDustParticle(ClientLevel level, double x, double y, double z, double dx, double dy, double dz, SpriteSet sprites) {
         super(level, x, y, z);
@@ -24,6 +26,8 @@ public class ActionDustParticle extends TextureSheetParticle {
         
         this.quadSize = LightDustConfig.COMMON.particleSize.get().floatValue() * 1.5F;
         this.baseAlpha = LightDustConfig.COMMON.ambientDustOpacity.get().floatValue() * 1.5F;
+        this.cachedGravity = LightDustConfig.COMMON.actionDustGravity.get() * 0.001;
+        this.cachedBounce = LightDustConfig.COMMON.actionDustBounce.get();
         this.lifetime = 40 + level.random.nextInt(30);
         this.gravity = 0.00F; 
         this.hasPhysics = true;
@@ -126,7 +130,7 @@ public class ActionDustParticle extends TextureSheetParticle {
             double sinX = net.minecraft.util.Mth.sin(time * 0.8f + seed) * 0.0002;
             double cosZ = net.minecraft.util.Mth.cos(time * 1.1f + seed) * 0.0002;
             double microTurbulence = (this.level.random.nextDouble() - 0.5) * 0.0002;
-            double driftDown = (LightDustConfig.COMMON.actionDustGravity.get() * 0.001) + (this.level.random.nextDouble() * 0.001);
+            double driftDown = this.cachedGravity + (this.level.random.nextDouble() * 0.001);
             
             this.xd += sinX + microTurbulence;
             this.zd += cosZ + (microTurbulence * 0.5);
@@ -139,7 +143,7 @@ public class ActionDustParticle extends TextureSheetParticle {
         this.move(this.xd, this.yd, this.zd);
 
         if (!this.onGround) {
-            double bounceForce = LightDustConfig.COMMON.actionDustBounce.get();
+            double bounceForce = this.cachedBounce;
             if (this.xd != prevXd) {
                 this.xd = -prevXd * bounceForce;
             }
